@@ -1,0 +1,12 @@
+.env
+client_secret*.json
+profiller/
+veri/
+cikti/
+assets/
+*.mp3
+*.mp4
+*.wav
+__pycache__/
+.venv/
+.pytest_cache/
