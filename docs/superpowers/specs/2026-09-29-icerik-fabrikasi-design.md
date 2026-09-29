@@ -26,7 +26,7 @@ Web paneli, YouTube Shorts, Türkçe içerik, ücretli TTS/LLM. Yapı bunlara a�
 | TTS (TikTok) | Edge-TTS | Ücretsiz, kelime zaman damgası verir |
 | Render | Doğrudan ffmpeg (MoviePy ve ImageMagick kaldırılır) | Hız, daha az bağımlılık |
 | Altyazı | `.ass` dosyası, kelime vurgulu | Sesle senkron |
-| Reddit | PRAW, ücretsiz "script app" | Anonim `.json` uç noktası engelleniyor |
+| Reddit | Anahtarsız Atom/RSS akışı (`/r/<sub>/top/.rss?t=week`) | `.json` uç noktası 403; yeni API uygulaması Reddit onayı gerektiriyor. RSS tam metni veriyor (2026-09-29 doğrulandı) |
 | TikTok yükleme | Playwright, hesap başına kalıcı Chrome profili | Resmi API onaysız uygulamada sadece gizli paylaşıyor |
 | YouTube yükleme | YouTube Data API v3, resumable | Mevcut, çalışıyor |
 | Durum | SQLite | Tek dosya, yeniden başlatılabilir işler |
@@ -44,7 +44,7 @@ icerik-fabrikasi/
   core/
     ayar.py                   yaml + .env okuma ve doğrulama
     llm.py                    Gemini; JSON şema zorunlu
-    kaynak/reddit.py          PRAW, uzunluk filtresi, tekrar kontrolü
+    kaynak/reddit.py          RSS okuma, HTML→metin, uzunluk filtresi, tekrar kontrolü
     kaynak/uretim.py          kanal prompt'uyla özgün hikâye
     tts/edge.py, tts/kokoro.py  metin → ses + kelime zamanları (ortak arayüz)
     render/tiktok_dikey.py    arka plan kesme + kelime vurgulu altyazı
@@ -71,7 +71,7 @@ Her adımın çıktısı diske ve DB'ye yazılır. Aynı kanal yeniden çalışt
 
 ### İçerik kaynakları
 
-- `reddit`: yaml'daki subredditlerden haftanın en iyileri; `min`/`max` karakter filtresi; herhangi bir kanalda daha önce kullanılmış hikâye atlanır (DB).
+- `reddit`: yaml'daki subredditlerin haftalık en iyileri RSS'ten okunur (tarayıcı user-agent'ı, istekler arası ≥25 sn, 429/boş cevapta bekleyip bir kez daha dener); HTML gövde düz metne çevrilir; `min`/`max` karakter filtresi; güncelleme/edit notları ve linkler temizlenir; herhangi bir kanalda daha önce kullanılmış hikâye atlanır (DB). Uygun hikâye yoksa `t=month` ile tekrar denenir.
 - `uretim`: kanalın prompt dosyası + Gemini ile özgün hikâye (korku, ilginç bilgi, uyku hikâyesi vb.).
 
 LLM çıktısı her zaman JSON şemasıyla alınır. TikTok şeması: `hook, part1, part2, aciklama, etiketler[]`. YouTube şeması: `baslik, aciklama, etiketler[], hikaye`.
@@ -180,5 +180,5 @@ Tekrar sayısı: `n = min(tekrar, floor((hedef + ara) / (hikaye_suresi + ara)))`
 ## Gerekli ücretsiz hesaplar (kullanıcı)
 
 - Google AI Studio API anahtarı (Gemini).
-- Reddit "script" uygulaması (client id/secret).
 - Mevcut: Telegram bot, YouTube OAuth client.
+- Reddit için anahtar gerekmez (RSS).
