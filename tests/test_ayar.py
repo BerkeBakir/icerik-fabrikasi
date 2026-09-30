@@ -96,3 +96,36 @@ def test_youtube_reddit_kaynagini_reddeder(tmp_path):
 def test_olmayan_kanal(tmp_path):
     with pytest.raises(AyarHatasi, match="yok"):
         kanal_yukle("yok", kok=tmp_path)
+
+
+@pytest.mark.parametrize("hiz", ['"+10%"', '"-5%"', '"+0%"', "+25%"])
+def test_edge_hiz_gecerli(tmp_path, hiz):
+    yaz(tmp_path, "t1", TIKTOK.replace('hiz: "+10%"', f"hiz: {hiz}"))
+    assert kanal_yukle("t1", kok=tmp_path).ses.hiz.endswith("%")
+
+
+@pytest.mark.parametrize("hiz", ['"10%"', "1.1", '"+10"', '"fast"', '"+1.5%"'])
+def test_edge_hiz_gecersiz(tmp_path, hiz):
+    yaz(tmp_path, "t1", TIKTOK.replace('hiz: "+10%"', f"hiz: {hiz}"))
+    with pytest.raises(AyarHatasi, match="hiz"):
+        kanal_yukle("t1", kok=tmp_path)
+
+
+@pytest.mark.parametrize("hiz,beklenen", [("0.85", 0.85), ("1", 1), ("2", 2), ("2.0", 2.0)])
+def test_kokoro_hiz_gecerli(tmp_path, hiz, beklenen):
+    yaz(tmp_path, "y1", YOUTUBE.replace("hiz: 0.85", f"hiz: {hiz}"))
+    assert kanal_yukle("y1", kok=tmp_path).ses.hiz == beklenen
+
+
+@pytest.mark.parametrize("hiz", ["0", "-0.5", "2.5", '"+10%"', '"0.9"', "true"])
+def test_kokoro_hiz_gecersiz(tmp_path, hiz):
+    yaz(tmp_path, "y1", YOUTUBE.replace("hiz: 0.85", f"hiz: {hiz}"))
+    with pytest.raises(AyarHatasi, match="hiz"):
+        kanal_yukle("y1", kok=tmp_path)
+
+
+def test_hiz_varsayilanlari(tmp_path):
+    yaz(tmp_path, "t1", TIKTOK.replace(', hiz: "+10%"', ""))
+    yaz(tmp_path, "y1", YOUTUBE.replace(", hiz: 0.85", ""))
+    assert kanal_yukle("t1", kok=tmp_path).ses.hiz == "+0%"
+    assert kanal_yukle("y1", kok=tmp_path).ses.hiz == 1.0

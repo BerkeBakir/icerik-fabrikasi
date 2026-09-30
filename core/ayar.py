@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -69,6 +70,15 @@ def _zorunlu(d: dict, anahtar: str, yer: str):
     return d[anahtar]
 
 
+def _hiz_dogrula(motor: str, hiz, yer: str):
+    if motor == "edge":
+        if not (isinstance(hiz, str) and re.fullmatch(r"[+-]\d+%", hiz)):
+            raise AyarHatasi(f"{yer}: ses.hiz edge için '+10%' ya da '-5%' biçiminde olmalı, verilen: {hiz!r}")
+    elif isinstance(hiz, bool) or not isinstance(hiz, (int, float)) or not 0 < hiz <= 2:
+        raise AyarHatasi(f"{yer}: ses.hiz kokoro için 0'dan büyük, en fazla 2 olan bir sayı olmalı, verilen: {hiz!r}")
+    return hiz
+
+
 def kanal_yukle(ad: str, kok: Path = KOK) -> Kanal:
     yol = kok / "kanallar" / f"{ad}.yaml"
     if not yol.exists():
@@ -107,7 +117,7 @@ def kanal_yukle(ad: str, kok: Path = KOK) -> Kanal:
     if platform == "tiktok" and motor != "edge":
         raise AyarHatasi(f"{yer}: TikTok altyazısı kelime zamanı ister, ses motoru 'edge' olmalı")
     ses = Ses(motor=motor, ses=_zorunlu(sd, "ses", f"{yer} ses"),
-              hiz=sd.get("hiz", "+0%" if motor == "edge" else 1.0))
+              hiz=_hiz_dogrula(motor, sd.get("hiz", "+0%" if motor == "edge" else 1.0), yer))
 
     gorunurluk = _zorunlu(d, "gorunurluk", yer)
     gecerli = TIKTOK_GORUNURLUK if platform == "tiktok" else YOUTUBE_GORUNURLUK
