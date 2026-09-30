@@ -402,3 +402,17 @@ def test_ayni_calistirmada_render_edilip_iptal_edilen_is_klasoru_korunur(tmp_pat
     is_ = b.db.is_getir(1)
     assert is_.durum == "iptal" and is_.deneme == 3
     assert (tmp_path / "cikti" / "t1" / f"is_{is_.id}" / "part2.mp4").exists()
+
+
+def test_onay_bekleyen_calistirma_baslangic_mesaji_gondermez_ve_tek_uyari_loglar(tmp_path, caplog):
+    tt = SahteTikTok(hatalar=[SahteYuklemeHatasi(gonderildi=True)])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with pytest.raises(OnayGerekli):
+        calistir(b)
+    caplog.clear()
+    b.bildirim.mesajlar.clear()
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(OnayGerekli):
+            calistir(b)
+    assert b.bildirim.mesajlar == []
+    assert len([r for r in caplog.records if r.levelno >= logging.WARNING and "onay" in r.getMessage()]) == 1

@@ -71,6 +71,7 @@ def _parca_yukle(b: Baglam, is_: Is, parca: int, yukleyici, *args):
             b.bildirim.foto(ekran, mesaj)
         else:
             b.bildirim.mesaj(mesaj)
+        b.log.warning("İş #%d Part %d paylaşıldı ama doğrulanamadı, onay bekliyor: %s", is_.id, parca, e)
         raise OnayGerekli(f"Part {parca} paylaşıldı ama doğrulanamadı: {e}") from e
 
 
@@ -167,7 +168,7 @@ def calistir(b: Baglam) -> Is | None:
             if not b.kuru:
                 b.bildirim.mesaj(f"⏭ [{k.ad}] Kanal zaten çalışıyor, bu çalıştırma atlandı")
             return None
-        if not b.kuru:
+        if not b.kuru and not _onay_bekleyen(b.db, k.ad):
             b.bildirim.mesaj(f"🚀 [{k.ad}] Çalışma başladı")
         return _calistir(b)
 
@@ -192,7 +193,7 @@ def _calistir(b: Baglam) -> Is:
     try:
         is_ = (_tiktok if k.platform == "tiktok" else _youtube)(b, is_, klasor)
     except OnayGerekli as e:
-        b.log.warning("İş #%d manuel onay bekliyor: %s", is_.id, e)
+        b.log.debug("İş #%d manuel onay bekliyor: %s", is_.id, e)
         e.bildirildi = True
         raise
     except Exception as e:

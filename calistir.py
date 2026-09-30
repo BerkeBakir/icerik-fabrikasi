@@ -129,7 +129,7 @@ def main(argv=None) -> int:
     try:
         is_ = calistir(b)
     except OnayGerekli as e:
-        log.warning("Manuel onay gerekli: %s", e)
+        log.debug("Manuel onay gerekli: %s", e)
         return 3
     except Exception as e:
         if not getattr(e, "bildirildi", False):
