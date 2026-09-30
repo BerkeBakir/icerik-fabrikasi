@@ -86,9 +86,7 @@ def main(argv=None) -> int:
         for h in hatalar:
             log.error(h)
         if not a.kuru:
-            bildirim.mesaj(f"🚨 [{kanal.ad}] Ön kontrol başarısız:
-" + "
-".join(hatalar))
+            bildirim.mesaj(f"🚨 [{kanal.ad}] Ön kontrol başarısız:\n" + "\n".join(hatalar))
         return 2
 
     from core.is_akisi import Baglam, calistir
