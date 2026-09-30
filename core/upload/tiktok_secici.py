@@ -1,9 +1,13 @@
 """TikTok Studio DOM seçicileri. Arayüz değişince SADECE burası güncellenir.
 Arayüz dili İngilizce'ye sabitlenir (URL'de lang=en)."""
+import re
 
 YUKLEME_URL = "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
 GIRIS_URL = "https://www.tiktok.com/login?lang=en"
-ICERIK_URL_DESENI = "**/tiktokstudio/content**"
+ICERIK_URL_REGEX = r"/tiktokstudio/content"
+GIRIS_YOLU = "/login"
+PAYLAS_DEVRE_DISI_ATTR = "aria-disabled"
+GORUNURLUK_SECENEK_ROL = "option"
 
 DOSYA_INPUT = 'input[type="file"]'
 ACIKLAMA_EDITOR = 'div.public-DraftEditor-content[contenteditable="true"], div[contenteditable="true"]'
@@ -19,7 +23,6 @@ KAPAT_BUTONLARI = [
     'button:has-text("Decline optional cookies")',
     'button:has-text("Got it")',
     'button:has-text("Not now")',
-    'button:has-text("Cancel")',
     'div[role="dialog"] button[aria-label="Close"]',
 ]
 
@@ -40,3 +43,11 @@ DAKIKA_SECENEK = 'span[class*="tiktok-timepicker-right"]'
 SIMDI_PAYLAS = 'button:has-text("Post now")'
 BASARI_METINLERI = ['text=/your video (has been|is being) (uploaded|posted|published)/i',
                     'text=/video (scheduled|published)/i', 'text=/Manage your posts/i']
+
+
+def etiket_oneri_deseni(etiket: str) -> re.Pattern:
+    return re.compile(rf"^#?{re.escape(etiket)}\b", re.IGNORECASE)
+
+
+def tam_metin_deseni(metin: str) -> re.Pattern:
+    return re.compile(rf"^{re.escape(metin)}$")

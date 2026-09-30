@@ -25,6 +25,19 @@ def zamani_yuvarla(dt: datetime) -> datetime:
     return temel + timedelta(minutes=eksik)
 
 
+def zamanlama_dogrula(zaman: datetime, simdi: datetime) -> datetime:
+    """Zamanlama penceresini (15 dk - 10 gün) doğrular, 5 dk'ya yuvarlar, üst sınırı aşmaz."""
+    if zaman < simdi + timedelta(minutes=15):
+        raise TikTokHatasi(f"Zamanlama en az 15 dakika sonrası olmalı: {zaman:%Y-%m-%d %H:%M}")
+    ust = simdi + timedelta(minutes=14400)
+    if zaman > ust:
+        raise TikTokHatasi(f"Zamanlama en fazla 10 gün sonrası olabilir: {zaman:%Y-%m-%d %H:%M}")
+    yuvarlak = zamani_yuvarla(zaman)
+    if yuvarlak > ust:
+        yuvarlak = yuvarlak - timedelta(minutes=5)
+    return yuvarlak
+
+
 class TikTokYukleyici:
     def __init__(self, profil_dir: Path, hata_dir: Path, log: logging.Logger | None = None, headless: bool = False):
         self.profil_dir = Path(profil_dir)
@@ -40,6 +53,9 @@ class TikTokYukleyici:
         try:
             ctx = p.chromium.launch_persistent_context(str(self.profil_dir), channel="chrome", **ayar)
         except Exception as e:
+            m = str(e).lower()
+            if not ("chrome" in m and ("not found" in m or "executable" in m or "distribution" in m)):
+                raise
             self.log.warning("Sistem Chrome'u açılamadı (%s), Playwright Chromium kullanılıyor", e)
             ctx = p.chromium.launch_persistent_context(str(self.profil_dir), **ayar)
         sayfa = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -51,11 +67,22 @@ class TikTokYukleyici:
 
         with sync_playwright() as p:
             ctx, sayfa = self._baslat(p)
-            sayfa.goto(s.GIRIS_URL)
-            input("Açılan pencerede TikTok'a giriş yap, bitince bu pencereye dönüp Enter'a bas... ")
-            ctx.close()
+            try:
+                sayfa.goto(s.GIRIS_URL)
+                input("Açılan pencerede TikTok'a giriş yap, bitince bu pencereye dönüp Enter'a bas... ")
+            finally:
+                ctx.close()
 
     # --- yardımcılar ---
+    def _gorunurse(self, locator, sure_ms: int) -> bool:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+        try:
+            locator.wait_for(state="visible", timeout=sure_ms)
+            return True
+        except PlaywrightTimeout:
+            return False
+
     def _bekle(self, a: float = 0.6, b: float = 1.8) -> None:
         time.sleep(random.uniform(a, b))
 
@@ -68,7 +95,7 @@ class TikTokYukleyici:
         for secici in s.KAPAT_BUTONLARI:
             try:
                 b = sayfa.locator(secici).first
-                if b.is_visible(timeout=500):
+                if self._gorunurse(b, 500):
                     b.click()
                     self._bekle(0.3, 0.8)
             except Exception:
@@ -81,7 +108,8 @@ class TikTokYukleyici:
             sayfa.screenshot(path=str(yol), full_page=True)
             yol.with_suffix(".html").write_text(sayfa.content(), encoding="utf-8")
             return yol
-        except Exception:
+        except Exception as e:
+            self.log.warning("Ekran görüntüsü kaydedilemedi: %s", e)
             return None
 
     # --- adımlar ---
@@ -92,7 +120,7 @@ class TikTokYukleyici:
         while time.time() < bitis:
             tamam = any(sayfa.locator(x).count() for x in s.YUKLEME_TAMAM)
             aktif = (paylas.count() > 0 and paylas.first.is_enabled()
-                     and paylas.first.get_attribute("aria-disabled") != "true")
+                     and paylas.first.get_attribute(s.PAYLAS_DEVRE_DISI_ATTR) != "true")
             if tamam and aktif:
                 return
             time.sleep(2)
@@ -107,16 +135,16 @@ class TikTokYukleyici:
         for etiket in etiketler:
             self._yaz(sayfa, f" #{etiket}")
             oneriler = sayfa.locator(s.ETIKET_ONERI_OGE)
-            try:
-                oneriler.first.wait_for(state="visible", timeout=5000)
+            if self._gorunurse(oneriler.first, 5000):
                 self._bekle(0.4, 0.9)
-                eslesen = oneriler.filter(has_text=re.compile(rf"^#?{re.escape(etiket)}\b", re.IGNORECASE))
+                eslesen = oneriler.filter(has_text=s.etiket_oneri_deseni(etiket))
                 if eslesen.count():
-                    eslesen.first.click()
-                    self._bekle()
-                    continue
-            except Exception:
-                pass
+                    try:
+                        eslesen.first.click()
+                        self._bekle()
+                        continue
+                    except Exception as e:
+                        self.log.warning("Etiket önerisi tıklanamadı (#%s): %s", etiket, e)
             self.log.warning("Etiket önerisi bulunamadı, düz metin kaldı: #%s", etiket)
             sayfa.keyboard.type(" ")
 
@@ -124,15 +152,15 @@ class TikTokYukleyici:
         metin = s.GORUNURLUK_METIN[gorunurluk]
         sayfa.locator(s.GORUNURLUK_ACICI).first.click()
         self._bekle(0.4, 0.9)
-        sayfa.get_by_role("option", name=metin).or_(sayfa.get_by_text(metin, exact=True)).first.click()
+        sayfa.get_by_role(s.GORUNURLUK_SECENEK_ROL, name=metin).or_(sayfa.get_by_text(metin, exact=True)).first.click()
         self._bekle()
 
     def _zamanla(self, sayfa, zaman: datetime) -> None:
-        zaman = zamani_yuvarla(zaman)
+        zaman = zamanlama_dogrula(zaman, datetime.now())
         sayfa.locator(s.ZAMANLA_SECENEK).first.click()
         self._bekle()
         izin = sayfa.locator(s.ZAMANLA_IZIN).first
-        if izin.is_visible(timeout=1500):
+        if self._gorunurse(izin, 1500):
             izin.click()
             self._bekle()
         girdiler = sayfa.locator(s.ZAMAN_GIRDILERI)
@@ -142,13 +170,13 @@ class TikTokYukleyici:
         for _ in range((zaman.year * 12 + zaman.month) - (bugun.year * 12 + bugun.month)):
             sayfa.locator(s.TAKVIM_SONRAKI_AY).first.click()
             self._bekle(0.3, 0.6)
-        sayfa.locator(s.TAKVIM_GUN).filter(has_text=re.compile(rf"^{zaman.day}$")).first.click()
+        sayfa.locator(s.TAKVIM_GUN).filter(has_text=s.tam_metin_deseni(str(zaman.day))).first.click()
         self._bekle()
         # saat ve dakika
         girdiler.nth(0).click()
-        sayfa.locator(s.SAAT_SECENEK).filter(has_text=re.compile(rf"^{zaman.hour:02d}$")).first.click()
+        sayfa.locator(s.SAAT_SECENEK).filter(has_text=s.tam_metin_deseni(f"{zaman.hour:02d}")).first.click()
         self._bekle(0.3, 0.6)
-        sayfa.locator(s.DAKIKA_SECENEK).filter(has_text=re.compile(rf"^{zaman.minute:02d}$")).first.click()
+        sayfa.locator(s.DAKIKA_SECENEK).filter(has_text=s.tam_metin_deseni(f"{zaman.minute:02d}")).first.click()
         self._bekle()
         beklenen = f"{zaman.hour:02d}:{zaman.minute:02d}"
         if girdiler.nth(0).input_value() != beklenen:
@@ -158,13 +186,13 @@ class TikTokYukleyici:
         sayfa.locator(s.PAYLAS_BUTON).first.click()
         simdi = sayfa.locator(s.SIMDI_PAYLAS).first
         try:
-            if simdi.is_visible(timeout=5000):
+            if self._gorunurse(simdi, 5000):
                 simdi.click()
         except Exception:
             pass
         bitis = time.time() + 180
         while time.time() < bitis:
-            if re.search(r"/tiktokstudio/content", sayfa.url):
+            if re.search(s.ICERIK_URL_REGEX, sayfa.url):
                 return
             if any(sayfa.locator(x).count() for x in s.BASARI_METINLERI):
                 return
@@ -175,12 +203,18 @@ class TikTokYukleyici:
               zaman: datetime | None = None) -> None:
         from playwright.sync_api import sync_playwright
 
+        if gorunurluk not in s.GORUNURLUK_METIN:
+            raise TikTokHatasi(f"Geçersiz görünürlük: {gorunurluk}")
         with sync_playwright() as p:
-            ctx, sayfa = self._baslat(p)
+            try:
+                ctx, sayfa = self._baslat(p)
+            except Exception as e:
+                raise TikTokHatasi(
+                    f"TikTok tarayıcısı açılamadı (profil başka bir pencerede açık olabilir): {e}") from e
             try:
                 sayfa.goto(s.YUKLEME_URL)
                 self._bekle(2, 4)
-                if "/login" in sayfa.url:
+                if s.GIRIS_YOLU in sayfa.url:
                     raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap")
                 self._popuplari_kapat(sayfa)
                 self.log.info("Video seçiliyor: %s", Path(video).name)
