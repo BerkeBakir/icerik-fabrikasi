@@ -12,12 +12,14 @@ from core.upload import tiktok_secici as s
 
 
 class TikTokHatasi(Exception):
-    """gonderildi=True: Post'a tıklandıktan sonra hata; video yayında olabilir, tekrar yüklenmemeli."""
+    """gonderildi=True: Post'a tıklandıktan sonra hata; video yayında olabilir, tekrar yüklenmemeli.
+    yetki=True: oturum kapalı; kullanıcının '--giris' çalıştırması gerekir."""
 
-    def __init__(self, mesaj: str, ekran: Path | None = None, gonderildi: bool = False):
+    def __init__(self, mesaj: str, ekran: Path | None = None, gonderildi: bool = False, yetki: bool = False):
         super().__init__(mesaj)
         self.ekran = ekran
         self.gonderildi = gonderildi
+        self.yetki = yetki
 
 
 def zamani_yuvarla(dt: datetime) -> datetime:
@@ -241,7 +243,7 @@ class TikTokYukleyici:
                 sayfa.goto(s.YUKLEME_URL)
                 self._bekle(2, 4)
                 if s.GIRIS_YOLU in sayfa.url:
-                    raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap")
+                    raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap", yetki=True)
                 self._popuplari_kapat(sayfa)
                 self.log.info("Video seçiliyor: %s", Path(video).name)
                 self._dosya_sec(sayfa, Path(video))

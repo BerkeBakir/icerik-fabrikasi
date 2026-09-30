@@ -158,3 +158,31 @@ def test_tiklama_oncesi_hata_gonderilmedi(tmp_path, hizli_zaman):
     with pytest.raises(Exception) as h:
         y._paylas_ve_dogrula(_SahteSayfa(paylas_hata=RuntimeError("buton yok")))
     assert getattr(h.value, "gonderildi", False) is False
+
+
+def test_oturum_kapaliysa_yetki_hatasi(tmp_path, monkeypatch):
+    import playwright.sync_api
+    from contextlib import contextmanager
+
+    class Sayfa:
+        url = "https://www.tiktok.com/login?redirect=x"
+
+        def goto(self, url):
+            pass
+
+    class Ctx:
+        def close(self):
+            pass
+
+    @contextmanager
+    def sahte_playwright():
+        yield object()
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", sahte_playwright)
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    monkeypatch.setattr(y, "_baslat_sarmali", lambda p: (Ctx(), Sayfa()))
+    monkeypatch.setattr(y, "_bekle", lambda *a: None)
+    monkeypatch.setattr(y, "_ekran_kaydet", lambda sayfa, ad: None)
+    with pytest.raises(TikTokHatasi, match="--giris") as h:
+        y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
+    assert h.value.yetki is True and h.value.gonderildi is False
+    assert TikTokHatasi("x").yetki is False

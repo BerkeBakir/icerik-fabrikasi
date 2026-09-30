@@ -86,10 +86,11 @@ class DB:
         self.bag.commit()
         return self.is_getir(is_id)
 
-    def is_hata(self, is_id: int, mesaj: str, en_fazla: int = 3) -> Is:
+    def is_hata(self, is_id: int, mesaj: str, en_fazla: int = 3, say: bool = True) -> Is:
+        """say=False: hatayı kaydeder ama deneme sayılmaz (ör. oturum/yetki hatası)."""
         mevcut = self.is_getir(is_id)
-        deneme = mevcut.deneme + 1
-        durum = "iptal" if deneme >= en_fazla else mevcut.durum
+        deneme = mevcut.deneme + 1 if say else mevcut.deneme
+        durum = "iptal" if say and deneme >= en_fazla else mevcut.durum
         self.bag.execute(
             "UPDATE isler SET durum=?, hata=?, deneme=?, guncelleme=? WHERE id=?",
             (durum, mesaj[:2000], deneme, _simdi(), is_id),

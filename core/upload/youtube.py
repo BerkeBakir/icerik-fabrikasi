@@ -23,7 +23,11 @@ _AG_HATALARI = (OSError, http.client.HTTPException, httplib2.HttpLib2Error, Tran
 
 
 class YukleHatasi(Exception):
-    pass
+    """yetki=True: kullanıcının '--giris' çalıştırması gerekir."""
+
+    def __init__(self, mesaj: str, yetki: bool = False):
+        super().__init__(mesaj)
+        self.yetki = yetki
 
 
 def _kayitli_kimlik(token_yol: Path, eski_pickle: Path | None):
@@ -58,7 +62,8 @@ def kimlik_yukle(token_yol: Path, client_secret: Path, eski_pickle: Path | None 
 
     if not creds or not creds.valid:
         if not etkilesimli:
-            raise YukleHatasi("YouTube yetkisi yok ya da geçersiz; 'calistir.py <kanal> --giris' çalıştır")
+            raise YukleHatasi("YouTube yetkisi yok ya da geçersiz; 'calistir.py <kanal> --giris' çalıştır",
+                              yetki=True)
         if not Path(client_secret).exists():
             raise YukleHatasi(f"client_secret.json bulunamadı: {client_secret}")
         creds = InstalledAppFlow.from_client_secrets_file(str(client_secret), SCOPES).run_local_server(port=0)

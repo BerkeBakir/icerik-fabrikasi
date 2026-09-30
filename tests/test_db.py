@@ -54,3 +54,14 @@ def test_is_iptal(tmp_path):
     i = db.is_olustur("k")
     assert db.is_iptal(i.id).durum == "iptal"
     assert db.yarim_is("k") is None
+
+
+def test_hata_sayilmadan_kaydedilir(tmp_path):
+    db = DB(tmp_path / "f.db")
+    a = db.is_olustur("k1")
+    db.is_ilerlet(a.id, "video_hazir")
+    b = db.is_hata(a.id, "oturum kapali", say=False)
+    assert b.deneme == 0 and b.hata == "oturum kapali" and b.durum == "video_hazir"
+    for _ in range(3):
+        b = db.is_hata(a.id, "yine", say=False)
+    assert b.durum == "video_hazir" and b.deneme == 0

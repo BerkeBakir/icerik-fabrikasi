@@ -162,8 +162,12 @@ def test_part2_bildirimi_etkin_zamani_kullanir(tmp_path):
     assert "29.09 14:05" in b.bildirim.mesajlar[-1]
 
 
-def test_iptal_edilen_isin_klasoru_silinir(tmp_path):
-    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(patla=99))
+def test_render_oncesi_iptal_edilen_isin_klasoru_silinir(tmp_path):
+    def bozuk_render(arka_plan, ses, cikti, rastgele=None):
+        raise RuntimeError("render coktu")
+
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok())
+    b.render_tiktok = bozuk_render
     for _ in range(3):
         with pytest.raises(RuntimeError):
             calistir(b)
@@ -171,6 +175,18 @@ def test_iptal_edilen_isin_klasoru_silinir(tmp_path):
     assert is_.durum == "iptal"
     assert not (tmp_path / "cikti" / "t1" / f"is_{is_.id}").exists()
     assert "iptal edildi" in b.bildirim.mesajlar[-1]
+
+
+def test_render_sonrasi_iptal_edilen_isin_klasoru_korunur(tmp_path):
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(patla=99))
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            calistir(b)
+    is_ = b.db.is_getir(1)
+    klasor = tmp_path / "cikti" / "t1" / f"is_{is_.id}"
+    assert is_.durum == "iptal"
+    assert (klasor / "part1.mp4").exists()
+    assert "iptal edildi" in b.bildirim.mesajlar[-1] and str(klasor) in b.bildirim.mesajlar[-1]
 
 
 def test_bekle_yontemi_uyur_ve_hemen_yukler(tmp_path):
@@ -300,3 +316,65 @@ def test_tiklama_oncesi_hata_normal_deneme_sayilir(tmp_path):
     is_ = b.db.yarim_is("t1")
     assert is_.deneme == 1 and "bekleyen_onay" not in is_.veri
     assert "buton yok" in b.bildirim.mesajlar[-1]
+
+
+def test_yetki_hatasi_deneme_yakmaz_ve_klasoru_korur(tmp_path):
+    hata = SahteYuklemeHatasi("TikTok oturumu kapalı")
+    hata.yetki = True
+    tt = SahteTikTok(hatalar=[hata, hata, hata, hata])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    for _ in range(4):
+        with pytest.raises(SahteYuklemeHatasi):
+            calistir(b)
+    is_ = b.db.yarim_is("t1")
+    assert is_ is not None and is_.durum == "video_hazir" and is_.deneme == 0
+    assert "oturumu kapalı" in is_.hata
+    assert (tmp_path / "cikti" / "t1" / f"is_{is_.id}" / "part1.mp4").exists()
+    anahtar = [m for m in b.bildirim.mesajlar if m.startswith("🔑")]
+    assert len(anahtar) == 4 and "calistir.py t1 --giris" in anahtar[0]
+    assert not any("🚨" in m for m in b.bildirim.mesajlar)
+    assert calistir(b).durum == "yuklendi"
+
+
+def test_youtube_yetki_hatasi_deneme_yakmaz(tmp_path):
+    kanal = Kanal(ad="y1", platform="youtube", kaynak=Kaynak("uretim", prompt=tmp_path / "p.txt", kelime=100),
+                  ses=Ses("kokoro", "af_heart", 0.85), arka_plan=Path("bg.mp4"), gorunurluk="private",
+                  token="tok", ortam_sesi=Path("r.mp3"))
+    (tmp_path / "p.txt").write_text("Write {kelime} words", encoding="utf-8")
+
+    def render_youtube(arka_plan, hikaye_ses, ortam, seviye, tekrar, ara_sn, hedef_sn, cikti):
+        Path(cikti).parent.mkdir(parents=True, exist_ok=True)
+        Path(cikti).write_bytes(b"v")
+        return 4
+
+    def youtube_yukleyici(kanal, video, baslik, aciklama, etiketler):
+        from core.upload.youtube import YukleHatasi
+        raise YukleHatasi("YouTube yetkisi yok ya da geçersiz", yetki=True)
+
+    b = Baglam(kanal=kanal, db=DB(tmp_path / "f.db"), llm=SahteLLM(), bildirim=SahteBildirim(), log=LOG,
+               kok=tmp_path, tts_fabrika=lambda ses, log=None: SahteTTS(),
+               render_youtube=render_youtube, youtube_yukleyici=youtube_yukleyici)
+    with pytest.raises(Exception, match="yetkisi"):
+        calistir(b)
+    is_ = b.db.yarim_is("y1")
+    assert is_.deneme == 0 and is_.durum == "video_hazir"
+    assert b.bildirim.mesajlar[-1].startswith("🔑 [y1] Oturum/yetki gerekli")
+
+
+def test_ayni_calistirmada_render_edilip_iptal_edilen_is_klasoru_korunur(tmp_path):
+    sayac = {"n": 0}
+
+    def iki_kez_bozuk(arka_plan, ses, cikti, rastgele=None):
+        sayac["n"] += 1
+        if sayac["n"] <= 2:
+            raise RuntimeError("render coktu")
+        return sahte_render_tiktok(arka_plan, ses, cikti)
+
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(patla=99))
+    b.render_tiktok = iki_kez_bozuk
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            calistir(b)
+    is_ = b.db.is_getir(1)
+    assert is_.durum == "iptal" and is_.deneme == 3
+    assert (tmp_path / "cikti" / "t1" / f"is_{is_.id}" / "part2.mp4").exists()

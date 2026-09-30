@@ -149,3 +149,15 @@ def test_bozuk_json_token_giris_ister(tmp_path):
 def test_token_yoksa_etkilesimsiz_hata(tmp_path):
     with pytest.raises(YukleHatasi, match="--giris"):
         kimlik_yukle(tmp_path / "t.json", tmp_path / "cs.json", tmp_path / "eski.pickle", etkilesimli=False)
+
+
+def test_giris_gerektiren_hata_yetki_isaretli(tmp_path):
+    with pytest.raises(YukleHatasi) as h:
+        kimlik_yukle(tmp_path / "t.json", tmp_path / "cs.json", etkilesimli=False)
+    assert h.value.yetki is True
+
+
+def test_client_secret_yoksa_yetki_isaretsiz(tmp_path):
+    with pytest.raises(YukleHatasi) as h:
+        kimlik_yukle(tmp_path / "t.json", tmp_path / "cs.json", etkilesimli=True)
+    assert h.value.yetki is False

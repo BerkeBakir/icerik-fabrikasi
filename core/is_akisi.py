@@ -191,12 +191,21 @@ def _calistir(b: Baglam) -> Is:
         b.log.warning("İş #%d manuel onay bekliyor: %s", is_.id, e)
         raise
     except Exception as e:
+        if getattr(e, "yetki", False):
+            b.db.is_hata(is_.id, f"{type(e).__name__}: {e}", say=False)
+            b.log.error("İş #%d oturum/yetki bekliyor: %s", is_.id, e)
+            b.bildirim.mesaj(f"🔑 [{k.ad}] Oturum/yetki gerekli: {e}. 'calistir.py {k.ad} --giris' çalıştır.")
+            raise
+        render_edildi = b.db.is_getir(is_.id).gecti_mi("video_hazir")  # is_ bu çalıştırmanın başından kalma
         is_ = b.db.is_hata(is_.id, f"{type(e).__name__}: {e}")
         b.log.exception("İş #%d hata verdi (deneme %d)", is_.id, is_.deneme)
         mesaj = f"🚨 [{k.ad}] İş #{is_.id} hata ({is_.durum}, deneme {is_.deneme}): {e}"
         if is_.durum == "iptal":
-            shutil.rmtree(klasor, ignore_errors=True)
             mesaj += " - iş iptal edildi"
+            if render_edildi:
+                mesaj += f"; videolar korundu: {klasor}"
+            else:
+                shutil.rmtree(klasor, ignore_errors=True)
         ekran = getattr(e, "ekran", None)
         if ekran:
             b.bildirim.foto(ekran, mesaj)
