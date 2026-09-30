@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     python = KOK / ".venv" / "Scripts" / "python.exe"
     for saat in a.saat:
         komut = sil_komutu(a.kanal, saat) if a.sil else olustur_komutu(a.kanal, saat, python, KOK)
-        r = subprocess.run(komut, capture_output=True, text=True)
+        r = subprocess.run(komut, capture_output=True, text=True, encoding="oem", errors="replace")
         print((r.stdout or r.stderr).strip())
         if r.returncode != 0:
             return r.returncode
