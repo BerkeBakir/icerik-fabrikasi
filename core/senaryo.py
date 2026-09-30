@@ -89,13 +89,18 @@ def tiktok_senaryo(llm, hikaye: Hikaye, etiket_sayisi: int) -> TiktokSenaryo:
                                   baslik=hikaye.baslik, govde=hikaye.govde)
     v = llm.json_uret(prompt, TIKTOK_SEMA, sicaklik=0.7)
     hook = v["hook"].strip()
-    part1 = v["part1"].strip()
+    part1 = v["part1"].strip().replace("’", "'")
     if not part1.lower().startswith(hook.lower()[:30]):
         part1 = f"{hook} {part1}"
-    if not part1.endswith(PART1_SON):
+    govde = part1.rstrip()
+    if govde.endswith(PART1_SON):
+        part1 = govde
+    elif govde.endswith(PART1_SON.rstrip("!")):
+        part1 = govde[:-len(PART1_SON.rstrip("!"))].rstrip() + " " + PART1_SON
+    else:
         part1 = f"{part1} {PART1_SON}"
     etiketler = [t for t in (etiket_temizle(e) for e in v["etiketler"]) if t]
-    return TiktokSenaryo(hook, part1, v["part2"].strip(), v["aciklama"].strip(), etiketler)
+    return TiktokSenaryo(hook, part1.strip(), v["part2"].strip(), v["aciklama"].strip(), etiketler)
 
 
 def serbest_hikaye(llm, prompt_metni: str) -> Hikaye:

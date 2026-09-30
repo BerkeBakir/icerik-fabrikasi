@@ -47,3 +47,34 @@ def test_eksik_alan_uc_denemeden_sonra_hata():
     g = Gemini("k", istemci=ist, uyku=lambda s: None)
     with pytest.raises(LLMHatasi, match="eksik"):
         g.json_uret("p", SEMA)
+
+
+def test_bos_liste_eksik_sayilmaz():
+    sema = {"type": "object", "properties": {"a": {"type": "string"}, "l": {"type": "array", "items": {"type": "string"}}}, "required": ["a", "l"]}
+    ist = SahteIstemci(['{"a": "x", "l": []}'])
+    g = Gemini("k", istemci=ist, uyku=lambda s: None)
+    result = g.json_uret("p", sema)
+    assert result == {"a": "x", "l": []}
+    assert len(ist.models.cagrilar) == 1
+
+
+def test_bos_metin_eksik_sayilir():
+    ist = SahteIstemci(['{"a": "  "}'] * 3)
+    g = Gemini("k", istemci=ist, uyku=lambda s: None)
+    with pytest.raises(LLMHatasi, match="eksik"):
+        g.json_uret("p", SEMA)
+
+
+def test_nesne_olmayan_json_hata():
+    ist = SahteIstemci(['"[1,2]"'] * 3)
+    g = Gemini("k", istemci=ist, uyku=lambda s: None)
+    with pytest.raises(LLMHatasi, match="nesne"):
+        g.json_uret("p", SEMA)
+
+
+def test_afc_kapali():
+    ist = SahteIstemci(['{"a": "b"}'])
+    g = Gemini("k", istemci=ist)
+    g.json_uret("p", SEMA)
+    _, _, config = ist.models.cagrilar[0]
+    assert config.automatic_function_calling.disable is True

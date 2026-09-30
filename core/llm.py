@@ -32,6 +32,7 @@ class Gemini:
                     response_mime_type="application/json",
                     response_json_schema=sema,
                     temperature=sicaklik,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),
             )
             metin = (yanit.text or "").strip()
@@ -39,7 +40,10 @@ class Gemini:
                 veri = json.loads(metin)
             except json.JSONDecodeError as e:
                 raise LLMHatasi(f"geçersiz JSON: {metin[:200]}") from e
-            eksik = [k for k in sema.get("required", []) if not veri.get(k)]
+            if not isinstance(veri, dict):
+                raise LLMHatasi(f"JSON nesne değil: {metin[:200]}")
+            eksik = [k for k in sema.get("required", [])
+                     if k not in veri or veri[k] is None or (isinstance(veri[k], str) and not veri[k].strip())]
             if eksik:
                 raise LLMHatasi(f"eksik alanlar: {eksik}")
             return veri
