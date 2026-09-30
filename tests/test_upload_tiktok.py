@@ -85,3 +85,76 @@ def test_zamani_tazele():
     simdi = datetime(2026, 9, 29, 12, 0)
     assert zamani_tazele(datetime(2026, 9, 29, 12, 30), simdi) == datetime(2026, 9, 29, 12, 30)
     assert zamani_tazele(datetime(2026, 9, 29, 12, 10), simdi) == datetime(2026, 9, 29, 12, 20)
+
+
+class _SahteOge:
+    def __init__(self, hata=None):
+        self.hata = hata
+
+    @property
+    def first(self):
+        return self
+
+    def click(self):
+        if self.hata:
+            raise self.hata
+
+    def count(self):
+        return 0
+
+    def wait_for(self, state, timeout):
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        raise PlaywrightTimeout("yok")
+
+
+class _SahteSayfa:
+    def __init__(self, paylas_hata=None, url_hata=None):
+        self.paylas_hata = paylas_hata
+        self.url_hata = url_hata
+
+    @property
+    def url(self):
+        if self.url_hata:
+            raise self.url_hata
+        return "https://example.com/upload"
+
+    def locator(self, secici):
+        return _SahteOge(self.paylas_hata if secici == s.PAYLAS_BUTON else None)
+
+
+@pytest.fixture
+def hizli_zaman(monkeypatch):
+    import core.upload.tiktok as tt
+    saat = [0.0]
+
+    def zaman():
+        saat[0] += 30
+        return saat[0]
+    monkeypatch.setattr(tt.time, "time", zaman)
+    monkeypatch.setattr(tt.time, "sleep", lambda sn: None)
+
+
+def test_hata_varsayilan_gonderilmedi():
+    assert TikTokHatasi("x").gonderildi is False
+    assert TikTokHatasi("x", gonderildi=True).gonderildi is True
+
+
+def test_dogrulama_zaman_asimi_gonderildi_isaretler(tmp_path, hizli_zaman):
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    with pytest.raises(TikTokHatasi, match="doğrulanamadı") as h:
+        y._paylas_ve_dogrula(_SahteSayfa())
+    assert h.value.gonderildi is True
+
+
+def test_tiklama_sonrasi_beklenmeyen_hata_gonderildi_isaretler(tmp_path, hizli_zaman):
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    with pytest.raises(TikTokHatasi) as h:
+        y._paylas_ve_dogrula(_SahteSayfa(url_hata=RuntimeError("sayfa kapandi")))
+    assert h.value.gonderildi is True and "sayfa kapandi" in str(h.value)
+
+
+def test_tiklama_oncesi_hata_gonderilmedi(tmp_path, hizli_zaman):
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    with pytest.raises(Exception) as h:
+        y._paylas_ve_dogrula(_SahteSayfa(paylas_hata=RuntimeError("buton yok")))
+    assert getattr(h.value, "gonderildi", False) is False

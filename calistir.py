@@ -2,12 +2,15 @@
   python calistir.py <kanal>            işi çalıştır (yarım iş varsa devam eder)
   python calistir.py <kanal> --kuru     yükleme hariç her şeyi üret
   python calistir.py <kanal> --giris    TikTok girişi / YouTube yetkisi (bir kerelik)
+  python calistir.py <kanal> --onayla         doğrulanamayan TikTok paylaşımı yayında: işi ilerlet
+  python calistir.py <kanal> --yeniden-dene   doğrulanamayan TikTok paylaşımı yayında değil: tekrar yükle
   python calistir.py --ses-ornekleri    ses örneklerini cikti/ses_ornekleri/ altına üret
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 
 from core import gunluk
 from core.ayar import (KOK, AyarHatasi, client_secret_yolu, db_yolu, eski_token_yolu, hata_klasoru,
@@ -47,6 +50,21 @@ def _giris(kanal, log) -> int:
     return 0
 
 
+def _onay(kanal, onay: bool) -> int:
+    from core.is_akisi import onayla, yeniden_dene
+
+    db = DB(db_yolu())
+    is_ = onayla(db, kanal.ad, KOK, datetime.now()) if onay else yeniden_dene(db, kanal.ad)
+    if is_ is None:
+        print(f"[{kanal.ad}] Onay bekleyen iş yok")
+        return 1
+    if onay:
+        print(f"[{kanal.ad}] İş #{is_.id} onaylandı, yeni durum: {is_.durum}")
+    else:
+        print(f"[{kanal.ad}] İş #{is_.id} bir sonraki çalıştırmada tekrar yüklenecek (durum: {is_.durum})")
+    return 0
+
+
 def main(argv=None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description="İçerik Fabrikası")
@@ -54,6 +72,8 @@ def main(argv=None) -> int:
     p.add_argument("--kuru", action="store_true", help="yükleme yapmadan üret")
     p.add_argument("--giris", action="store_true", help="hesap girişi / yetki")
     p.add_argument("--ses-ornekleri", action="store_true")
+    p.add_argument("--onayla", action="store_true", help="doğrulanamayan paylaşım yayında, işi ilerlet")
+    p.add_argument("--yeniden-dene", action="store_true", help="doğrulanamayan paylaşımı tekrar yükle")
     a = p.parse_args(argv)
     ortami_yukle()
 
@@ -79,6 +99,8 @@ def main(argv=None) -> int:
             log.error("Giriş başarısız: %s", e)
             print(f"Giriş hatası ({type(e).__name__}): {e}")
             return 1
+    if a.onayla or a.yeniden_dene:
+        return _onay(kanal, a.onayla)
 
     bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
     hatalar = onkontrol(kanal, kuru=a.kuru)
@@ -89,7 +111,7 @@ def main(argv=None) -> int:
             bildirim.mesaj(f"🚨 [{kanal.ad}] Ön kontrol başarısız:\n" + "\n".join(hatalar))
         return 2
 
-    from core.is_akisi import Baglam, calistir
+    from core.is_akisi import Baglam, OnayGerekli, calistir
     from core.llm import Gemini
 
     try:
@@ -107,6 +129,9 @@ def main(argv=None) -> int:
         bildirim.mesaj(f"🚀 [{kanal.ad}] Çalışma başladı")
     try:
         is_ = calistir(b)
+    except OnayGerekli as e:
+        log.warning("Manuel onay gerekli: %s", e)
+        return 3
     except Exception:
         return 1
     if is_ is None:

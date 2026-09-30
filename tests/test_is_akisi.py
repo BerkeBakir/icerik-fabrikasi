@@ -6,7 +6,7 @@ import pytest
 
 from core.ayar import Etiketler, Kanal, Kaynak, Ses
 from core.db import DB
-from core.is_akisi import Baglam, calistir
+from core.is_akisi import Baglam, OnayGerekli, calistir, onayla, yeniden_dene
 from core.kilit import dosya_kilidi
 from core.modeller import Hikaye
 from core.tts import Kelime, SesSonucu
@@ -39,11 +39,16 @@ class SahteTTS:
 
 
 class SahteTikTok:
-    def __init__(self, patla=0):
+    def __init__(self, patla=0, hatalar=None):
         self.yuklemeler = []
         self.patla = patla
+        self.hatalar = list(hatalar or [])
 
     def yukle(self, video, aciklama, etiketler, gorunurluk, zaman=None):
+        if self.hatalar:
+            hata = self.hatalar.pop(0)
+            if hata is not None:
+                raise hata
         if self.patla:
             self.patla -= 1
             raise RuntimeError("tiktok coktu")
@@ -212,3 +217,86 @@ def test_youtube_mutlu_yol(tmp_path):
     assert yuklenen["hedef"] == 5400
     assert yuklenen["baslik"] == "Rain - Deep Sleep Story (1.5 Hours)"
     assert yuklenen["aciklama"].endswith("#sleep")
+
+
+class SahteYuklemeHatasi(Exception):
+    def __init__(self, mesaj="dogrulanamadi", gonderildi=False, ekran=None):
+        super().__init__(mesaj)
+        self.gonderildi = gonderildi
+        self.ekran = ekran
+
+
+def _uyarilar(b):
+    return [m for m in b.bildirim.mesajlar if "doğrulanamadı" in m]
+
+
+def test_dogrulanamayan_part1_onay_bekler_ve_tekrar_yuklenmez(tmp_path):
+    tt = SahteTikTok(hatalar=[SahteYuklemeHatasi(gonderildi=True)])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with pytest.raises(OnayGerekli):
+        calistir(b)
+    is_ = b.db.yarim_is("t1")
+    assert is_.durum == "video_hazir" and is_.veri["bekleyen_onay"] == "part1" and is_.deneme == 0
+    uyarilar = _uyarilar(b)
+    assert len(uyarilar) == 1 and "Part 1" in uyarilar[0] and "--onayla" in uyarilar[0]
+    assert not any("🚨" in m for m in b.bildirim.mesajlar)
+    onceki = list(b.bildirim.mesajlar)
+
+    with pytest.raises(OnayGerekli):
+        calistir(b)
+    assert tt.yuklemeler == []
+    assert not any("doğrulanamadı" in m or "🚨" in m for m in b.bildirim.mesajlar[len(onceki):])
+    assert b.db.is_getir(is_.id).deneme == 0
+
+    onaylanan = onayla(b.db, "t1", tmp_path, datetime(2026, 9, 29, 12, 30))
+    assert onaylanan.durum == "parca1_yuklendi" and onaylanan.veri["bekleyen_onay"] is None
+    assert onaylanan.veri["parca1_zaman"] == "2026-09-29T12:30:00"
+    son = calistir(b)
+    assert son.durum == "yuklendi"
+    assert [y[0] for y in tt.yuklemeler] == ["part2.mp4"]
+
+
+def test_dogrulanamayan_part2_onaylaninca_biter_ve_klasor_silinir(tmp_path):
+    tt = SahteTikTok(hatalar=[None, SahteYuklemeHatasi(gonderildi=True)])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with pytest.raises(OnayGerekli):
+        calistir(b)
+    is_ = b.db.yarim_is("t1")
+    assert is_.durum == "parca1_yuklendi" and is_.veri["bekleyen_onay"] == "part2"
+    assert "Part 2" in _uyarilar(b)[0]
+    klasor = tmp_path / "cikti" / "t1" / f"is_{is_.id}"
+    assert klasor.exists()
+    bitti = onayla(b.db, "t1", tmp_path, datetime(2026, 9, 29, 12, 30))
+    assert bitti.durum == "yuklendi" and bitti.veri["bekleyen_onay"] is None
+    assert not klasor.exists()
+    assert b.db.yarim_is("t1") is None
+
+
+def test_yeniden_dene_bayragi_temizler_ve_part1_tekrar_yuklenir(tmp_path):
+    tt = SahteTikTok(hatalar=[SahteYuklemeHatasi(gonderildi=True)])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with pytest.raises(OnayGerekli):
+        calistir(b)
+    temiz = yeniden_dene(b.db, "t1")
+    assert temiz.durum == "video_hazir" and temiz.veri["bekleyen_onay"] is None
+    assert calistir(b).durum == "yuklendi"
+    assert [y[0] for y in tt.yuklemeler] == ["part1.mp4", "part2.mp4"]
+
+
+def test_onay_bekleyen_is_yoksa_none(tmp_path):
+    db = DB(tmp_path / "f.db")
+    assert onayla(db, "t1", tmp_path, datetime(2026, 9, 29)) is None
+    assert yeniden_dene(db, "t1") is None
+    db.is_olustur("t1")
+    assert onayla(db, "t1", tmp_path, datetime(2026, 9, 29)) is None
+    assert yeniden_dene(db, "t1") is None
+
+
+def test_tiklama_oncesi_hata_normal_deneme_sayilir(tmp_path):
+    tt = SahteTikTok(hatalar=[SahteYuklemeHatasi("buton yok", gonderildi=False)])
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with pytest.raises(SahteYuklemeHatasi):
+        calistir(b)
+    is_ = b.db.yarim_is("t1")
+    assert is_.deneme == 1 and "bekleyen_onay" not in is_.veri
+    assert "buton yok" in b.bildirim.mesajlar[-1]

@@ -12,9 +12,12 @@ from core.upload import tiktok_secici as s
 
 
 class TikTokHatasi(Exception):
-    def __init__(self, mesaj: str, ekran: Path | None = None):
+    """gonderildi=True: Post'a tıklandıktan sonra hata; video yayında olabilir, tekrar yüklenmemeli."""
+
+    def __init__(self, mesaj: str, ekran: Path | None = None, gonderildi: bool = False):
         super().__init__(mesaj)
         self.ekran = ekran
+        self.gonderildi = gonderildi
 
 
 def zamani_yuvarla(dt: datetime) -> datetime:
@@ -202,20 +205,26 @@ class TikTokYukleyici:
 
     def _paylas_ve_dogrula(self, sayfa) -> None:
         sayfa.locator(s.PAYLAS_BUTON).first.click()
-        simdi = sayfa.locator(s.SIMDI_PAYLAS).first
         try:
-            if self._gorunurse(simdi, 5000):
-                simdi.click()
-        except Exception:
-            pass
-        bitis = time.time() + 180
-        while time.time() < bitis:
-            if re.search(s.ICERIK_URL_REGEX, sayfa.url):
-                return
-            if any(sayfa.locator(x).count() for x in s.BASARI_METINLERI):
-                return
-            time.sleep(2)
-        raise TikTokHatasi("Paylaşım 3 dakika içinde doğrulanamadı")
+            simdi = sayfa.locator(s.SIMDI_PAYLAS).first
+            try:
+                if self._gorunurse(simdi, 5000):
+                    simdi.click()
+            except Exception:
+                pass
+            bitis = time.time() + 180
+            while time.time() < bitis:
+                if re.search(s.ICERIK_URL_REGEX, sayfa.url):
+                    return
+                if any(sayfa.locator(x).count() for x in s.BASARI_METINLERI):
+                    return
+                time.sleep(2)
+            raise TikTokHatasi("Paylaşım 3 dakika içinde doğrulanamadı", gonderildi=True)
+        except TikTokHatasi as e:
+            e.gonderildi = True
+            raise
+        except Exception as e:
+            raise TikTokHatasi(f"Paylaşım sonrası hata: {e}", gonderildi=True) from e
 
     def yukle(self, video: Path, aciklama: str, etiketler: list[str], gorunurluk: str,
               zaman: datetime | None = None) -> datetime | None:

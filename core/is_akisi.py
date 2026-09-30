@@ -26,6 +26,10 @@ class IsHatasi(Exception):
     pass
 
 
+class OnayGerekli(IsHatasi):
+    """Paylaşım yapıldı ama doğrulanamadı; kullanıcı --onayla ya da --yeniden-dene demeli."""
+
+
 @dataclass
 class Baglam:
     kanal: Kanal
@@ -50,8 +54,32 @@ def _saat_metni(dk: float) -> str:
     return "1 Hour" if saat == 1 else f"{saat:g} Hours"
 
 
+def _parca_yukle(b: Baglam, is_: Is, parca: int, yukleyici, *args):
+    """Part'ı yükler; Post'a tıklandıktan sonra hata olursa işi onay beklemeye alır."""
+    k = b.kanal
+    try:
+        with dosya_kilidi(kilit_yolu(b.kok)):
+            return yukleyici.yukle(*args)
+    except Exception as e:
+        if not getattr(e, "gonderildi", False):
+            raise
+        b.db.is_ilerlet(is_.id, is_.durum, bekleyen_onay=f"part{parca}")
+        mesaj = (f"⚠️ [{k.ad}] Part {parca} paylaşıldı ama doğrulanamadı. TikTok hesabını kontrol et; "
+                 f"yayındaysa 'calistir.py {k.ad} --onayla', değilse 'calistir.py {k.ad} --yeniden-dene' çalıştır.")
+        ekran = getattr(e, "ekran", None)
+        if ekran:
+            b.bildirim.foto(ekran, mesaj)
+        else:
+            b.bildirim.mesaj(mesaj)
+        raise OnayGerekli(f"Part {parca} paylaşıldı ama doğrulanamadı: {e}") from e
+
+
 def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
     k, db = b.kanal, b.db
+    if is_.veri.get("bekleyen_onay"):
+        b.log.warning("İş #%d onay bekliyor (%s); '--onayla' ya da '--yeniden-dene' çalıştırılmalı",
+                      is_.id, is_.veri["bekleyen_onay"])
+        raise OnayGerekli(f"İş #{is_.id} onay bekliyor: {is_.veri['bekleyen_onay']}")
     if not is_.gecti_mi("hikaye_secildi"):
         h = b.kaynak_fabrika(k, b.llm, db, b.log).sec()
         if h is None:
@@ -78,9 +106,8 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
     etiketler = etiketleri_birlestir(k.etiketler.sabit, s.etiketler, k.etiketler.llm_ekle)
     yukleyici = b.tiktok_fabrika(k)
     if not is_.gecti_mi("parca1_yuklendi"):
-        with dosya_kilidi(kilit_yolu(b.kok)):
-            yukleyici.yukle(Path(is_.veri["video"]["part1"]), tiktok_aciklama(1, s.aciklama),
-                            etiketler, k.gorunurluk, None)
+        _parca_yukle(b, is_, 1, yukleyici, Path(is_.veri["video"]["part1"]), tiktok_aciklama(1, s.aciklama),
+                     etiketler, k.gorunurluk, None)
         is_ = db.is_ilerlet(is_.id, "parca1_yuklendi", parca1_zaman=b.simdi().isoformat())
         b.bildirim.mesaj(f"✅ [{k.ad}] Part 1 yayında")
     hedef = datetime.fromisoformat(is_.veri["parca1_zaman"]) + timedelta(minutes=k.parca2_gecikme_dk)
@@ -92,9 +119,8 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
             b.log.info("Part 2 için %.0f sn bekleniyor", kalan)
             b.uyku(kalan)
         zaman = None
-    with dosya_kilidi(kilit_yolu(b.kok)):
-        etkin = yukleyici.yukle(Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama),
-                                etiketler, k.gorunurluk, zaman)
+    etkin = _parca_yukle(b, is_, 2, yukleyici, Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama),
+                         etiketler, k.gorunurluk, zaman)
     if zaman is not None and etkin is not None:
         zaman = etkin
     is_ = db.is_ilerlet(is_.id, "yuklendi", parca2_zaman=(zaman or b.simdi()).isoformat())
@@ -161,6 +187,9 @@ def _calistir(b: Baglam) -> Is:
         b.log.info("Kuru mod çıktı klasörü: %s", klasor)
     try:
         is_ = (_tiktok if k.platform == "tiktok" else _youtube)(b, is_, klasor)
+    except OnayGerekli as e:
+        b.log.warning("İş #%d manuel onay bekliyor: %s", is_.id, e)
+        raise
     except Exception as e:
         is_ = b.db.is_hata(is_.id, f"{type(e).__name__}: {e}")
         b.log.exception("İş #%d hata verdi (deneme %d)", is_.id, is_.deneme)
@@ -177,3 +206,28 @@ def _calistir(b: Baglam) -> Is:
     if is_.durum == "yuklendi":
         shutil.rmtree(klasor, ignore_errors=True)
     return is_
+
+
+def _onay_bekleyen(db: DB, kanal_ad: str) -> Is | None:
+    is_ = db.yarim_is(kanal_ad)
+    return is_ if is_ and is_.veri.get("bekleyen_onay") else None
+
+
+def onayla(db: DB, kanal_ad: str, kok: Path, simdi: datetime) -> Is | None:
+    """Doğrulanamayan paylaşım elle kontrol edildi ve yayında: işi ilerletir."""
+    is_ = _onay_bekleyen(db, kanal_ad)
+    if is_ is None:
+        return None
+    if is_.veri["bekleyen_onay"] == "part1":
+        return db.is_ilerlet(is_.id, "parca1_yuklendi", parca1_zaman=simdi.isoformat(), bekleyen_onay=None)
+    is_ = db.is_ilerlet(is_.id, "yuklendi", parca2_zaman=simdi.isoformat(), bekleyen_onay=None)
+    shutil.rmtree(cikti_klasoru(kanal_ad, is_.id, kok), ignore_errors=True)
+    return is_
+
+
+def yeniden_dene(db: DB, kanal_ad: str) -> Is | None:
+    """Doğrulanamayan paylaşım yayında değil: bayrağı temizler, sonraki çalıştırma tekrar yükler."""
+    is_ = _onay_bekleyen(db, kanal_ad)
+    if is_ is None:
+        return None
+    return db.is_ilerlet(is_.id, is_.durum, bekleyen_onay=None)

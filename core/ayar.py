@@ -176,8 +176,9 @@ def client_secret_yolu(kok: Path = KOK) -> Path:
     return kok / "client_secret.json"
 
 
-def cikti_klasoru(kanal: Kanal, is_id: int, kok: Path = KOK) -> Path:
-    return kok / "cikti" / kanal.ad / f"is_{is_id}"
+def cikti_klasoru(kanal: Kanal | str, is_id: int, kok: Path = KOK) -> Path:
+    ad = kanal if isinstance(kanal, str) else kanal.ad
+    return kok / "cikti" / ad / f"is_{is_id}"
 
 
 def kilit_yolu(kok: Path = KOK) -> Path:
