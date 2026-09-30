@@ -186,3 +186,77 @@ def test_oturum_kapaliysa_yetki_hatasi(tmp_path, monkeypatch):
         y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
     assert h.value.yetki is True and h.value.gonderildi is False
     assert TikTokHatasi("x").yetki is False
+
+
+class _SahteYuklemeSayfasi:
+    url = "https://www.tiktok.com/tiktokstudio/upload"
+
+    def goto(self, url):
+        pass
+
+
+class _SahteCtx:
+    def close(self):
+        raise RuntimeError("ctx kapanmadı")
+
+
+class _SahtePw:
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *a):
+        raise RuntimeError("playwright durdurulamadı")
+
+
+def _yukleyici(tmp_path, monkeypatch, paylas):
+    import core.upload.tiktok as t
+
+    monkeypatch.setattr(t, "sync_playwright", lambda: _SahtePw())
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    monkeypatch.setattr(y, "_baslat", lambda p: (_SahteCtx(), _SahteYuklemeSayfasi()))
+    for ad in ("_dosya_sec", "_aciklama_ve_etiketler", "_gorunurluk", "_popuplari_kapat", "_bekle"):
+        monkeypatch.setattr(y, ad, lambda *a, **kw: None)
+    monkeypatch.setattr(y, "_ekran_kaydet", lambda *a, **kw: None)
+    monkeypatch.setattr(y, "_paylas_ve_dogrula", lambda sayfa: paylas(y))
+    return y
+
+
+def test_kapanis_hatasi_tiklama_sonrasi_gonderildi_isaretini_korur(tmp_path, monkeypatch):
+    def paylas(y):
+        y._tiklandi = True
+        raise TikTokHatasi("dogrulanamadi")
+
+    y = _yukleyici(tmp_path, monkeypatch, paylas)
+    with pytest.raises(TikTokHatasi) as e:
+        y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
+    assert e.value.gonderildi is True
+
+
+def test_kapanis_hatasi_basarili_yuklemeyi_bozmaz(tmp_path, monkeypatch):
+    def paylas(y):
+        y._tiklandi = True
+
+    y = _yukleyici(tmp_path, monkeypatch, paylas)
+    assert y.yukle(tmp_path / "v.mp4", "a", [], "herkes") is None
+
+
+def test_tiklama_oncesi_hata_gonderildi_degil(tmp_path, monkeypatch):
+    y = _yukleyici(tmp_path, monkeypatch, lambda y: None)
+
+    def patla(*a, **kw):
+        raise RuntimeError("yüklenemedi")
+    monkeypatch.setattr(y, "_dosya_sec", patla)
+    with pytest.raises(TikTokHatasi) as e:
+        y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
+    assert e.value.gonderildi is False
+
+
+def test_tiklama_sonrasi_sade_istisna_gonderildi_olur(tmp_path, monkeypatch):
+    def paylas(y):
+        y._tiklandi = True
+        raise ValueError("click sonrası")
+
+    y = _yukleyici(tmp_path, monkeypatch, paylas)
+    with pytest.raises(TikTokHatasi) as e:
+        y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
+    assert e.value.gonderildi is True

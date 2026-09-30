@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from playwright.sync_api import sync_playwright
+
 from core.upload import tiktok_secici as s
 
 
@@ -56,6 +58,7 @@ class TikTokYukleyici:
         self.hata_dir = Path(hata_dir)
         self.log = log or logging.getLogger(__name__)
         self.headless = headless
+        self._tiklandi = False
 
     # --- tarayıcı ---
     def _baslat(self, p):
@@ -82,8 +85,6 @@ class TikTokYukleyici:
                 f"TikTok tarayıcısı açılamadı: {e} (profil başka bir pencerede açıksa kapatın)") from e
 
     def giris(self) -> None:
-        from playwright.sync_api import sync_playwright
-
         with sync_playwright() as p:
             ctx, sayfa = self._baslat_sarmali(p)
             try:
@@ -206,6 +207,7 @@ class TikTokYukleyici:
         return zaman
 
     def _paylas_ve_dogrula(self, sayfa) -> None:
+        self._tiklandi = True  # click() dispatch sonrası fırlatsa bile paylaşım gitmiş olabilir
         sayfa.locator(s.PAYLAS_BUTON).first.click()
         try:
             simdi = sayfa.locator(s.SIMDI_PAYLAS).first
@@ -228,39 +230,66 @@ class TikTokYukleyici:
         except Exception as e:
             raise TikTokHatasi(f"Paylaşım sonrası hata: {e}", gonderildi=True) from e
 
+    def _tarayici_kapat(self, ctx) -> None:
+        try:
+            ctx.close()
+        except Exception as e:
+            self.log.warning("Tarayıcı kapatılamadı: %s", e)
+
     def yukle(self, video: Path, aciklama: str, etiketler: list[str], gorunurluk: str,
               zaman: datetime | None = None) -> datetime | None:
         """Yükler; zamanlandıysa etkin (doğrulanmış/tazelenmiş) zamanı, hemen yayınsa None döner."""
-        from playwright.sync_api import sync_playwright
-
         if gorunurluk not in s.GORUNURLUK_METIN:
             raise TikTokHatasi(f"Geçersiz görünürlük: {gorunurluk}")
         if zaman is not None:
             zaman = zamanlama_dogrula(zaman, datetime.now())
-        with sync_playwright() as p:
-            ctx, sayfa = self._baslat_sarmali(p)
-            try:
-                sayfa.goto(s.YUKLEME_URL)
-                self._bekle(2, 4)
-                if s.GIRIS_YOLU in sayfa.url:
-                    raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap", yetki=True)
-                self._popuplari_kapat(sayfa)
-                self.log.info("Video seçiliyor: %s", Path(video).name)
-                self._dosya_sec(sayfa, Path(video))
-                self._popuplari_kapat(sayfa)
-                self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
-                self._gorunurluk(sayfa, gorunurluk)
-                if zaman:
-                    zaman = self._zamanla(sayfa, zaman)
-                self._popuplari_kapat(sayfa)
-                self._paylas_ve_dogrula(sayfa)
-                self.log.info("TikTok paylaşımı doğrulandı")
-                self._bekle(3, 5)
-                return zaman
-            except TikTokHatasi as e:
-                e.ekran = e.ekran or self._ekran_kaydet(sayfa, "tiktok")
-                raise
-            except Exception as e:
-                raise TikTokHatasi(f"TikTok yükleme hatası: {e}", self._ekran_kaydet(sayfa, "tiktok")) from e
-            finally:
-                ctx.close()
+        self._tiklandi = False
+        bitti = False
+        sonuc = None
+        ilk_hata: TikTokHatasi | None = None  # gövdeden çıkan asıl hata (kapanış hatası ezmesin)
+        try:
+            with sync_playwright() as p:
+                ctx, sayfa = self._baslat_sarmali(p)
+                try:
+                    sayfa.goto(s.YUKLEME_URL)
+                    self._bekle(2, 4)
+                    if s.GIRIS_YOLU in sayfa.url:
+                        raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap",
+                                           yetki=True)
+                    self._popuplari_kapat(sayfa)
+                    self.log.info("Video seçiliyor: %s", Path(video).name)
+                    self._dosya_sec(sayfa, Path(video))
+                    self._popuplari_kapat(sayfa)
+                    self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
+                    self._gorunurluk(sayfa, gorunurluk)
+                    if zaman:
+                        zaman = self._zamanla(sayfa, zaman)
+                    self._popuplari_kapat(sayfa)
+                    self._paylas_ve_dogrula(sayfa)
+                    self.log.info("TikTok paylaşımı doğrulandı")
+                    self._bekle(3, 5)
+                    sonuc = zaman
+                    bitti = True
+                except TikTokHatasi as e:
+                    e.ekran = e.ekran or self._ekran_kaydet(sayfa, "tiktok")
+                    ilk_hata = e
+                    raise
+                except Exception as e:
+                    ilk_hata = TikTokHatasi(f"TikTok yükleme hatası: {e}", self._ekran_kaydet(sayfa, "tiktok"))
+                    raise ilk_hata from e
+                finally:
+                    self._tarayici_kapat(ctx)
+        except Exception as e:
+            if bitti:
+                self.log.warning("Playwright kapanışında hata (yükleme başarılı): %s", e)
+                return sonuc
+            if ilk_hata is not None and e is not ilk_hata:
+                self.log.warning("Playwright kapanışında hata: %s", e)
+                e = ilk_hata
+            if self._tiklandi:
+                if isinstance(e, TikTokHatasi):
+                    e.gonderildi = True
+                    raise e
+                raise TikTokHatasi(f"Paylaşım sonrası hata: {e}", gonderildi=True) from e
+            raise e
+        return sonuc
