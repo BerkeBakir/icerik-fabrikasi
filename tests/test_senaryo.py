@@ -66,7 +66,7 @@ def test_youtube_paketi_kelime_sayisini_prompta_koyar():
 
 def test_part1_kivrik_kesme_isareti():
     # part1 with curly apostrophe ‘ instead of regular apostrophe
-    llm = SahteLLM({"hook": "You won’t believe.", "part1": "Follow for Part 2, it’s already on my profile!",
+    llm = SahteLLM({"hook": "You won’t believe.", "part1": "Follow so you don’t miss Part 2!",
                     "part2": "x", "aciklama": "d", "etiketler": []})
     s = tiktok_senaryo(llm, Hikaye("a", "b", "c"), 0)
     assert s.part1.count(PART1_SON) == 1
@@ -75,8 +75,20 @@ def test_part1_kivrik_kesme_isareti():
 
 def test_part1_unlemsiz_son():
     # part1 ending without "!" but matching the body of PART1_SON
-    llm = SahteLLM({"hook": "You won't believe.", "part1": "Follow for Part 2, it's already on my profile",
+    llm = SahteLLM({"hook": "You won't believe.", "part1": "Follow so you don't miss Part 2",
                     "part2": "x", "aciklama": "d", "etiketler": []})
     s = tiktok_senaryo(llm, Hikaye("a", "b", "c"), 0)
     assert s.part1.endswith(PART1_SON)
     assert s.part1.count(PART1_SON) == 1
+
+
+def test_part1_son_cumlesi_part2_icin_takip_ister():
+    assert PART1_SON == "Follow so you don't miss Part 2!"
+
+
+def test_tiktok_promptu_part2_sonra_paylasilir_der():
+    llm = SahteLLM({"hook": "H.", "part1": "H. x", "part2": "y", "aciklama": "d", "etiketler": []})
+    tiktok_senaryo(llm, Hikaye("a", "b", "c"), 0)
+    prompt = llm.promptlar[0]
+    assert "already on my profile" not in prompt
+    assert "Part 2 is posted later" in prompt

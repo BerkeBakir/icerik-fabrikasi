@@ -7,7 +7,7 @@ import re
 
 from core.modeller import Hikaye, TiktokSenaryo, YoutubePaketi
 
-PART1_SON = "Follow for Part 2, it's already on my profile!"
+PART1_SON = "Follow so you don't miss Part 2!"
 
 _METIN = {"type": "string"}
 _LISTE = {"type": "array", "items": {"type": "string"}}
@@ -33,7 +33,7 @@ TIKTOK_PROMPT = """Prepare this story for a high-quality, long-form TikTok video
 STRICT INSTRUCTIONS:
 1. DO NOT SUMMARIZE: keep the emotional depth, the crucial dialogue and the specific details.
 2. "hook": one viral opening sentence (3-5 seconds when spoken) that grabs attention immediately.
-3. "part1": starts with the hook sentence, tells the first half, and stops on a cliffhanger. It MUST end exactly with: "{part1_son}"
+3. "part1": starts with the hook sentence, tells the first half, and stops on a cliffhanger. Part 2 is posted later as a separate video, so never claim it is already on the profile. It MUST end exactly with: "{part1_son}"
 4. "part2": starts with a one-sentence recap, then the second half, the resolution and a short closing thought.
 5. Tone: immersive, dramatic, first-person storytelling. Plain spoken English, no emojis, no hashtags, no stage directions.
 6. "aciklama": an engaging one or two sentence TikTok caption WITHOUT hashtags.
