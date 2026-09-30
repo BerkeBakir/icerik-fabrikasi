@@ -38,6 +38,13 @@ def zamanlama_dogrula(zaman: datetime, simdi: datetime) -> datetime:
     return yuvarlak
 
 
+def zamani_tazele(zaman: datetime, simdi: datetime) -> datetime:
+    """Yükleme uzadıysa ve zaman 15 dk'dan yakınsa, 16 dk sonrasına (5 dk yuvarlı) ileri alır."""
+    if zaman >= simdi + timedelta(minutes=15):
+        return zaman
+    return zamani_yuvarla(simdi + timedelta(minutes=16))
+
+
 class TikTokYukleyici:
     def __init__(self, profil_dir: Path, hata_dir: Path, log: logging.Logger | None = None, headless: bool = False):
         self.profil_dir = Path(profil_dir)
@@ -62,11 +69,18 @@ class TikTokYukleyici:
         sayfa.set_default_timeout(30_000)
         return ctx, sayfa
 
+    def _baslat_sarmali(self, p):
+        try:
+            return self._baslat(p)
+        except Exception as e:
+            raise TikTokHatasi(
+                f"TikTok tarayıcısı açılamadı: {e} (profil başka bir pencerede açıksa kapatın)") from e
+
     def giris(self) -> None:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            ctx, sayfa = self._baslat(p)
+            ctx, sayfa = self._baslat_sarmali(p)
             try:
                 sayfa.goto(s.GIRIS_URL)
                 input("Açılan pencerede TikTok'a giriş yap, bitince bu pencereye dönüp Enter'a bas... ")
@@ -156,7 +170,10 @@ class TikTokYukleyici:
         self._bekle()
 
     def _zamanla(self, sayfa, zaman: datetime) -> None:
-        zaman = zamanlama_dogrula(zaman, datetime.now())
+        yeni = zamani_tazele(zaman, datetime.now())
+        if yeni != zaman:
+            self.log.warning("Yükleme uzadı, zamanlama %s -> %s olarak ileri alındı", zaman, yeni)
+            zaman = yeni
         sayfa.locator(s.ZAMANLA_SECENEK).first.click()
         self._bekle()
         izin = sayfa.locator(s.ZAMANLA_IZIN).first
@@ -205,12 +222,10 @@ class TikTokYukleyici:
 
         if gorunurluk not in s.GORUNURLUK_METIN:
             raise TikTokHatasi(f"Geçersiz görünürlük: {gorunurluk}")
+        if zaman is not None:
+            zaman = zamanlama_dogrula(zaman, datetime.now())
         with sync_playwright() as p:
-            try:
-                ctx, sayfa = self._baslat(p)
-            except Exception as e:
-                raise TikTokHatasi(
-                    f"TikTok tarayıcısı açılamadı (profil başka bir pencerede açık olabilir): {e}") from e
+            ctx, sayfa = self._baslat_sarmali(p)
             try:
                 sayfa.goto(s.YUKLEME_URL)
                 self._bekle(2, 4)

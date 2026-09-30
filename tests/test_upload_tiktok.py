@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
-from core.upload.tiktok import TikTokHatasi, zamani_yuvarla
+from core.upload.tiktok import TikTokHatasi, TikTokYukleyici, zamani_tazele, zamani_yuvarla
 
 
 @pytest.mark.parametrize("girdi,beklenen", [
@@ -72,3 +72,16 @@ def test_zamanlama_cok_uzak_hata():
     simdi = datetime(2026, 9, 30, 12, 0)
     with pytest.raises(TikTokHatasi):
         zamanlama_dogrula(simdi + timedelta(days=11), simdi)
+
+
+def test_gecersiz_zaman_tarayici_acmadan_hata(tmp_path):
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    with pytest.raises(TikTokHatasi):
+        y.yukle(tmp_path / "v.mp4", "a", [], "herkes", datetime.now() + timedelta(minutes=5))
+    assert not (tmp_path / "p").exists()
+
+
+def test_zamani_tazele():
+    simdi = datetime(2026, 9, 29, 12, 0)
+    assert zamani_tazele(datetime(2026, 9, 29, 12, 30), simdi) == datetime(2026, 9, 29, 12, 30)
+    assert zamani_tazele(datetime(2026, 9, 29, 12, 10), simdi) == datetime(2026, 9, 29, 12, 20)
