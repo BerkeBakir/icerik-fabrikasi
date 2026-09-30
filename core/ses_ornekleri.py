@@ -24,5 +24,8 @@ def uret(kok: Path = KOK) -> list[Path]:
         except Exception as e:
             print(f"Kokoro {s} başarısız: {e}")
     for s in EDGE_SESLER:
-        yollar.append(EdgeTTS(s, "-10%").seslendir(ORNEK, klasor / f"edge_{s}.mp3").yol)
+        try:
+            yollar.append(EdgeTTS(s, "-10%").seslendir(ORNEK, klasor / f"edge_{s}.mp3").yol)
+        except Exception as e:
+            print(f"Edge {s} başarısız: {e}")
     return yollar

@@ -15,6 +15,7 @@ def test_eksikler_listelenir(tmp_path, monkeypatch):
 
 
 def test_kuru_modda_oturum_istenmez(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.onkontrol.medya.araclar_var_mi", lambda: True)
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     (tmp_path / "bg.mp4").write_bytes(b"x")
     assert onkontrol(tiktok(tmp_path), kok=tmp_path, kuru=True) == []

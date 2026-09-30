@@ -169,7 +169,7 @@ class TikTokYukleyici:
         sayfa.get_by_role(s.GORUNURLUK_SECENEK_ROL, name=metin).or_(sayfa.get_by_text(metin, exact=True)).first.click()
         self._bekle()
 
-    def _zamanla(self, sayfa, zaman: datetime) -> None:
+    def _zamanla(self, sayfa, zaman: datetime) -> datetime:
         yeni = zamani_tazele(zaman, datetime.now())
         if yeni != zaman:
             self.log.warning("Yükleme uzadı, zamanlama %s -> %s olarak ileri alındı", zaman, yeni)
@@ -198,6 +198,7 @@ class TikTokYukleyici:
         beklenen = f"{zaman.hour:02d}:{zaman.minute:02d}"
         if girdiler.nth(0).input_value() != beklenen:
             raise TikTokHatasi(f"Zamanlama saati ayarlanamadı: {girdiler.nth(0).input_value()} != {beklenen}")
+        return zaman
 
     def _paylas_ve_dogrula(self, sayfa) -> None:
         sayfa.locator(s.PAYLAS_BUTON).first.click()
@@ -217,7 +218,8 @@ class TikTokYukleyici:
         raise TikTokHatasi("Paylaşım 3 dakika içinde doğrulanamadı")
 
     def yukle(self, video: Path, aciklama: str, etiketler: list[str], gorunurluk: str,
-              zaman: datetime | None = None) -> None:
+              zaman: datetime | None = None) -> datetime | None:
+        """Yükler; zamanlandıysa etkin (doğrulanmış/tazelenmiş) zamanı, hemen yayınsa None döner."""
         from playwright.sync_api import sync_playwright
 
         if gorunurluk not in s.GORUNURLUK_METIN:
@@ -238,11 +240,12 @@ class TikTokYukleyici:
                 self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
                 self._gorunurluk(sayfa, gorunurluk)
                 if zaman:
-                    self._zamanla(sayfa, zaman)
+                    zaman = self._zamanla(sayfa, zaman)
                 self._popuplari_kapat(sayfa)
                 self._paylas_ve_dogrula(sayfa)
                 self.log.info("TikTok paylaşımı doğrulandı")
                 self._bekle(3, 5)
+                return zaman
             except TikTokHatasi as e:
                 e.ekran = e.ekran or self._ekran_kaydet(sayfa, "tiktok")
                 raise

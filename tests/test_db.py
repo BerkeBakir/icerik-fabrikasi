@@ -47,3 +47,10 @@ def test_basarili_ilerleme_hatayi_temizler(tmp_path):
     db.is_hata(a.id, "gecici")
     b = db.is_ilerlet(a.id, "hikaye_secildi")
     assert b.hata is None and b.deneme == 1
+
+
+def test_is_iptal(tmp_path):
+    db = DB(tmp_path / "f.db")
+    i = db.is_olustur("k")
+    assert db.is_iptal(i.id).durum == "iptal"
+    assert db.yarim_is("k") is None

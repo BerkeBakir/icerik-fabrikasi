@@ -96,3 +96,8 @@ class DB:
         )
         self.bag.commit()
         return self.is_getir(is_id)
+
+    def is_iptal(self, is_id: int) -> Is:
+        self.bag.execute("UPDATE isler SET durum='iptal', guncelleme=? WHERE id=?", (_simdi(), is_id))
+        self.bag.commit()
+        return self.is_getir(is_id)

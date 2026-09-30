@@ -7,6 +7,7 @@ import pytest
 from core.ayar import Etiketler, Kanal, Kaynak, Ses
 from core.db import DB
 from core.is_akisi import Baglam, calistir
+from core.kilit import dosya_kilidi
 from core.modeller import Hikaye
 from core.tts import Kelime, SesSonucu
 
@@ -47,6 +48,7 @@ class SahteTikTok:
             self.patla -= 1
             raise RuntimeError("tiktok coktu")
         self.yuklemeler.append((Path(video).name, aciklama, etiketler, gorunurluk, zaman))
+        return zaman
 
 
 class SahteBildirim:
@@ -116,6 +118,54 @@ def test_kuru_mod_yuklemez(tmp_path):
     tt = SahteTikTok()
     is_ = calistir(baglam(tmp_path, tiktok_kanal(), tt, kuru=True))
     assert is_.durum == "video_hazir" and tt.yuklemeler == []
+
+
+def test_ayni_kanal_ikinci_calistirma_cikar(tmp_path):
+    tt = SahteTikTok()
+    b = baglam(tmp_path, tiktok_kanal(), tt)
+    with dosya_kilidi(tmp_path / "veri" / "t1.calisma.kilit"):
+        assert calistir(b) is None
+    assert b.db.yarim_is("t1") is None
+    assert tt.yuklemeler == [] and b.bildirim.mesajlar == []
+
+
+def test_kuru_mod_hikayeyi_tuketmez_ve_her_seferinde_yeniden_uretir(tmp_path):
+    tt = SahteTikTok()
+    kaynak = SahteKaynak()
+    b = baglam(tmp_path, tiktok_kanal(), tt, kaynak=kaynak, kuru=True)
+    k1 = calistir(b)
+    k2 = calistir(b)
+    assert kaynak.cagri == 2 and k1.id != k2.id
+    assert not b.db.hikaye_kullanildi_mi("reddit:abc")
+    assert b.db.yarim_is("t1") is None
+    assert b.db.is_getir(k1.id).durum == "iptal"
+    b.kuru = False
+    gercek = calistir(b)
+    assert gercek.id not in (k1.id, k2.id) and gercek.durum == "yuklendi"
+    assert len(tt.yuklemeler) == 2
+
+
+def test_part2_bildirimi_etkin_zamani_kullanir(tmp_path):
+    class Tazeleyen(SahteTikTok):
+        def yukle(self, video, aciklama, etiketler, gorunurluk, zaman=None):
+            super().yukle(video, aciklama, etiketler, gorunurluk, zaman)
+            return datetime(2026, 9, 29, 14, 5) if zaman else None
+
+    b = baglam(tmp_path, tiktok_kanal(), Tazeleyen())
+    is_ = calistir(b)
+    assert is_.veri["parca2_zaman"].startswith("2026-09-29T14:05")
+    assert "29.09 14:05" in b.bildirim.mesajlar[-1]
+
+
+def test_iptal_edilen_isin_klasoru_silinir(tmp_path):
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(patla=99))
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            calistir(b)
+    is_ = b.db.is_getir(1)
+    assert is_.durum == "iptal"
+    assert not (tmp_path / "cikti" / "t1" / f"is_{is_.id}").exists()
+    assert "iptal edildi" in b.bildirim.mesajlar[-1]
 
 
 def test_bekle_yontemi_uyur_ve_hemen_yukler(tmp_path):

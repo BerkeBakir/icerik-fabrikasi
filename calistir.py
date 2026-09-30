@@ -73,29 +73,47 @@ def main(argv=None) -> int:
         return 2
     log = gunluk.kur(kanal.ad)
     if a.giris:
-        return _giris(kanal, log)
+        try:
+            return _giris(kanal, log)
+        except Exception as e:
+            log.error("Giriş başarısız: %s", e)
+            print(f"Giriş hatası ({type(e).__name__}): {e}")
+            return 1
 
+    bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
     hatalar = onkontrol(kanal, kuru=a.kuru)
     if hatalar:
         for h in hatalar:
             log.error(h)
+        if not a.kuru:
+            bildirim.mesaj(f"🚨 [{kanal.ad}] Ön kontrol başarısız:
+" + "
+".join(hatalar))
         return 2
 
     from core.is_akisi import Baglam, calistir
     from core.llm import Gemini
 
-    bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
-    b = Baglam(
-        kanal=kanal, db=DB(db_yolu()), bildirim=bildirim, log=log, kok=KOK, kuru=a.kuru,
-        llm=Gemini(ortam("GEMINI_API_KEY"), model=ortam("GEMINI_MODEL", False) or "gemini-2.5-flash", log=log),
-        tiktok_fabrika=_tiktok_fabrika(log), youtube_yukleyici=_youtube_yukleyici(log),
-    )
+    try:
+        b = Baglam(
+            kanal=kanal, db=DB(db_yolu()), bildirim=bildirim, log=log, kok=KOK, kuru=a.kuru,
+            llm=Gemini(ortam("GEMINI_API_KEY"), model=ortam("GEMINI_MODEL", False) or "gemini-2.5-flash", log=log),
+            tiktok_fabrika=_tiktok_fabrika(log), youtube_yukleyici=_youtube_yukleyici(log),
+        )
+    except Exception as e:
+        log.exception("Başlatma hatası")
+        if not a.kuru:
+            bildirim.mesaj(f"🚨 [{kanal.ad}] Başlatma hatası: {type(e).__name__}: {e}")
+        return 1
     if not a.kuru:
         bildirim.mesaj(f"🚀 [{kanal.ad}] Çalışma başladı")
     try:
         is_ = calistir(b)
     except Exception:
         return 1
+    if is_ is None:
+        log.info("Kanal zaten çalışıyor, çıkılıyor")
+        return 0
     log.info("İş #%d bitti: %s", is_.id, is_.durum)
     return 0
 

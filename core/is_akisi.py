@@ -5,6 +5,7 @@ import hashlib
 import logging
 import shutil
 import time
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any, Callable
 from core.ayar import KOK, Kanal, cikti_klasoru, kilit_yolu
 from core.db import DB, Is
 from core.kaynak import kaynak_olustur
-from core.kilit import dosya_kilidi
+from core.kilit import KilitHatasi, dosya_kilidi
 from core.modeller import Hikaye, TiktokSenaryo, YoutubePaketi
 from core.render.tiktok_dikey import render_tiktok as _render_tiktok
 from core.render.youtube_uyku import render_youtube as _render_youtube
@@ -55,7 +56,8 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
         h = b.kaynak_fabrika(k, b.llm, db, b.log).sec()
         if h is None:
             raise IsHatasi("Uygun hikâye bulunamadı")
-        db.hikaye_isaretle(h.kimlik, k.ad)
+        if not b.kuru:
+            db.hikaye_isaretle(h.kimlik, k.ad)
         is_ = db.is_ilerlet(is_.id, "hikaye_secildi", hikaye=asdict(h))
     if not is_.gecti_mi("senaryo_hazir"):
         s = tiktok_senaryo(b.llm, Hikaye(**is_.veri["hikaye"]), k.etiketler.llm_ekle)
@@ -91,10 +93,12 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
             b.uyku(kalan)
         zaman = None
     with dosya_kilidi(kilit_yolu(b.kok)):
-        yukleyici.yukle(Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama),
-                        etiketler, k.gorunurluk, zaman)
+        etkin = yukleyici.yukle(Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama),
+                                etiketler, k.gorunurluk, zaman)
+    if zaman is not None and etkin is not None:
+        zaman = etkin
     is_ = db.is_ilerlet(is_.id, "yuklendi", parca2_zaman=(zaman or b.simdi()).isoformat())
-    b.bildirim.mesaj(f"🏁 [{k.ad}] Part 2 {'zamanlandı: ' + zaman.strftime('%H:%M') if zaman else 'yayında'}")
+    b.bildirim.mesaj(f"🏁 [{k.ad}] Part 2 {'zamanlandı: ' + zaman.strftime('%d.%m %H:%M') if zaman else 'yayında'}")
     return is_
 
 
@@ -104,7 +108,8 @@ def _youtube(b: Baglam, is_: Is, klasor: Path) -> Is:
         prompt = Path(k.kaynak.prompt).read_text(encoding="utf-8")
         p = youtube_paketi(b.llm, prompt, k.kaynak.kelime, b.log)
         kimlik = "uretim:" + hashlib.sha1(p.hikaye.encode("utf-8")).hexdigest()[:12]
-        db.hikaye_isaretle(kimlik, k.ad)
+        if not b.kuru:
+            db.hikaye_isaretle(kimlik, k.ad)
         is_ = db.is_ilerlet(is_.id, "senaryo_hazir", paket=asdict(p))
     p = YoutubePaketi(**is_.veri["paket"])
     if not is_.gecti_mi("ses_hazir"):
@@ -126,22 +131,43 @@ def _youtube(b: Baglam, is_: Is, klasor: Path) -> Is:
     return is_
 
 
-def calistir(b: Baglam) -> Is:
+def calistir(b: Baglam) -> Is | None:
     k = b.kanal
-    is_ = b.db.yarim_is(k.ad)
+    with ExitStack() as yigin:
+        try:
+            yigin.enter_context(dosya_kilidi(b.kok / "veri" / f"{k.ad}.calisma.kilit", bekle_sn=-1))
+        except KilitHatasi:
+            b.log.info("Kanal zaten çalışıyor, çıkılıyor")
+            return None
+        return _calistir(b)
+
+
+def _calistir(b: Baglam) -> Is:
+    k = b.kanal
+    anahtar = f"{k.ad}__kuru" if b.kuru else k.ad
+    is_ = b.db.yarim_is(anahtar)
+    if is_ and b.kuru:
+        b.log.info("Önceki yarım kuru iş #%d iptal ediliyor", is_.id)
+        b.db.is_iptal(is_.id)
+        is_ = None
     if is_:
         b.log.info("Yarım iş #%d devam ediyor (durum: %s)", is_.id, is_.durum)
     else:
-        is_ = b.db.is_olustur(k.ad)
+        is_ = b.db.is_olustur(anahtar)
         b.log.info("Yeni iş #%d", is_.id)
     klasor = cikti_klasoru(k, is_.id, b.kok)
     klasor.mkdir(parents=True, exist_ok=True)
+    if b.kuru:
+        b.log.info("Kuru mod çıktı klasörü: %s", klasor)
     try:
         is_ = (_tiktok if k.platform == "tiktok" else _youtube)(b, is_, klasor)
     except Exception as e:
         is_ = b.db.is_hata(is_.id, f"{type(e).__name__}: {e}")
         b.log.exception("İş #%d hata verdi (deneme %d)", is_.id, is_.deneme)
         mesaj = f"🚨 [{k.ad}] İş #{is_.id} hata ({is_.durum}, deneme {is_.deneme}): {e}"
+        if is_.durum == "iptal":
+            shutil.rmtree(klasor, ignore_errors=True)
+            mesaj += " - iş iptal edildi"
         ekran = getattr(e, "ekran", None)
         if ekran:
             b.bildirim.foto(ekran, mesaj)
