@@ -1,4 +1,9 @@
-"""Basit dosya kilidi: aynı anda tek TikTok yüklemesi."""
+"""Dosya kilidi: aynı anda tek TikTok yüklemesi.
+
+İşletim sistemi düzeyinde danışma (advisory) kilidi kullanır: süreç ölürse kilidi
+işletim sistemi kendisi bırakır, bu yüzden bayat kilit / devralma mantığı yoktur.
+Kilit dosyası asla silinmez (silmek yarış durumlarına yol açar).
+"""
 from __future__ import annotations
 
 import os
@@ -6,48 +11,52 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
 
 class KilitHatasi(Exception):
     pass
 
 
+def _kilitle_dene(f) -> None:
+    """Bloklamadan özel kilit almayı dener; doluysa OSError fırlatır."""
+    if os.name == "nt":
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _birak(f) -> None:
+    if os.name == "nt":
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 @contextmanager
-def dosya_kilidi(yol: Path, bekle_sn: float = 1800, eski_sn: float = 7200, uyku=time.sleep):
+def dosya_kilidi(yol: Path, bekle_sn: float = 1800, uyku=time.sleep):
     yol = Path(yol)
     yol.parent.mkdir(parents=True, exist_ok=True)
-    baslangic = time.time()
+    baslangic = time.monotonic()
     while True:
+        f = open(yol, "a+b")
         try:
-            fd = os.open(yol, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            try:
-                os.write(fd, str(os.getpid()).encode())
-            finally:
-                os.close(fd)
+            _kilitle_dene(f)
             break
-        except FileExistsError:
-            try:
-                yas = time.time() - yol.stat().st_mtime
-            except FileNotFoundError:
-                continue
-            if yas > eski_sn:
-                # Atomik devralma: yalnızca bir bekleyen aynı dosyayı yeniden adlandırabilir.
-                gecici = yol.with_name(f"{yol.name}.{os.getpid()}.{time.time_ns()}.eski")
-                try:
-                    os.replace(yol, gecici)
-                except FileNotFoundError:
-                    continue
-                except PermissionError:
-                    pass  # Windows: başka süreç açık tutuyor; kilit hâlâ dolu say
-                else:
-                    try:
-                        gecici.unlink(missing_ok=True)
-                    except PermissionError:
-                        pass
-                    continue
-            if time.time() - baslangic > bekle_sn:
+        except OSError:
+            f.close()
+            if time.monotonic() - baslangic > bekle_sn:
                 raise KilitHatasi(f"Kilit boşalmadı: {yol}")
             uyku(10)
     try:
         yield
     finally:
-        yol.unlink(missing_ok=True)
+        try:
+            _birak(f)
+        finally:
+            f.close()
