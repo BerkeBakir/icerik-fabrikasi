@@ -1,0 +1,12 @@
+# ÖRNEK: ikinci hesap (korku hikâyeleri). Kullanmak için profil adını değiştir,
+# 'python calistir.py ornek_tiktok_korku --giris' ile giriş yap.
+platform: tiktok
+profil: korku1
+kaynak: {tip: uretim, prompt: prompts/korku.txt}
+ses: {motor: edge, ses: en-US-ChristopherNeural, hiz: "+5%"}
+arka_plan: assets/arka_plan/orbital.mp4
+etiketler:
+  sabit: [horrorstory, scarystories, creepy]
+  llm_ekle: 3
+parca2_gecikme_dk: 120
+gorunurluk: herkes

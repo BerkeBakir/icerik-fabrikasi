@@ -1,0 +1,16 @@
+# Reddit hikâyeleri — ana TikTok hesabı
+platform: tiktok
+profil: hikaye1
+kaynak:
+  tip: reddit
+  subredditler: [AmItheAsshole, TrueOffMyChest, relationship_advice, confessions]
+  min: 3000
+  max: 4000
+ses: {motor: edge, ses: en-US-AndrewMultilingualNeural, hiz: "+10%"}
+arka_plan: assets/arka_plan/orbital.mp4
+etiketler:
+  sabit: [storytime, reddit, redditstories]
+  llm_ekle: 3
+parca2_gecikme_dk: 120
+parca2_yontem: tiktok_zamanla   # TikTok zamanlayıcısı çalışmazsa: bekle
+gorunurluk: herkes
