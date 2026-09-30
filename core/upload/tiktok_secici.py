@@ -1,0 +1,42 @@
+"""TikTok Studio DOM seçicileri. Arayüz değişince SADECE burası güncellenir.
+Arayüz dili İngilizce'ye sabitlenir (URL'de lang=en)."""
+
+YUKLEME_URL = "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
+GIRIS_URL = "https://www.tiktok.com/login?lang=en"
+ICERIK_URL_DESENI = "**/tiktokstudio/content**"
+
+DOSYA_INPUT = 'input[type="file"]'
+ACIKLAMA_EDITOR = 'div.public-DraftEditor-content[contenteditable="true"], div[contenteditable="true"]'
+ETIKET_ONERI_OGE = ('div.mention-list-popover-item, div[class*="hashtag-suggestion"] div[class*="item"], '
+                    'div[class*="mention-list"] div[class*="item"]')
+PAYLAS_BUTON = 'button[data-e2e="post_video_button"]'
+
+# Yükleme bitti göstergesi (herhangi biri görününce)
+YUKLEME_TAMAM = ['text="Uploaded"', '[data-e2e="upload_status_container"] >> text=/uploaded/i']
+
+# Kapatılacak popup/banner düğmeleri (görünenler tıklanır)
+KAPAT_BUTONLARI = [
+    'button:has-text("Decline optional cookies")',
+    'button:has-text("Got it")',
+    'button:has-text("Not now")',
+    'button:has-text("Cancel")',
+    'div[role="dialog"] button[aria-label="Close"]',
+]
+
+# Görünürlük
+GORUNURLUK_ACICI = 'div[data-e2e="video_visibility_container"] button, div:has(> span:text("Who can watch this video")) button'
+GORUNURLUK_METIN = {"herkes": "Everyone", "arkadaslar": "Friends", "sadece_ben": "Only you"}
+
+# Zamanlama
+ZAMANLA_SECENEK = 'label:has-text("Schedule"), input[value="schedule"]'
+ZAMANLA_IZIN = 'button:has-text("Allow")'
+ZAMAN_GIRDILERI = 'div[class*="scheduled-picker"] input, div[class*="schedule"] input'  # [0]=saat, [1]=tarih
+TAKVIM_SONRAKI_AY = 'div[class*="calendar"] span[class*="arrow"]:last-child'
+TAKVIM_GUN = 'div[class*="calendar"] span[class*="day"][class*="valid"]'
+SAAT_SECENEK = 'span[class*="tiktok-timepicker-left"]'
+DAKIKA_SECENEK = 'span[class*="tiktok-timepicker-right"]'
+
+# Paylaşım sonrası
+SIMDI_PAYLAS = 'button:has-text("Post now")'
+BASARI_METINLERI = ['text=/your video (has been|is being) (uploaded|posted|published)/i',
+                    'text=/video (scheduled|published)/i', 'text=/Manage your posts/i']

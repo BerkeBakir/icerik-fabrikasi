@@ -1,0 +1,203 @@
+"""TikTok Studio'ya Playwright ile yükleme (hesap başına kalıcı Chrome profili)."""
+from __future__ import annotations
+
+import logging
+import random
+import re
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from core.upload import tiktok_secici as s
+
+
+class TikTokHatasi(Exception):
+    def __init__(self, mesaj: str, ekran: Path | None = None):
+        super().__init__(mesaj)
+        self.ekran = ekran
+
+
+def zamani_yuvarla(dt: datetime) -> datetime:
+    temel = dt.replace(second=0, microsecond=0)
+    if temel == dt and dt.minute % 5 == 0:
+        return temel
+    eksik = 5 - (temel.minute % 5)
+    return temel + timedelta(minutes=eksik)
+
+
+class TikTokYukleyici:
+    def __init__(self, profil_dir: Path, hata_dir: Path, log: logging.Logger | None = None, headless: bool = False):
+        self.profil_dir = Path(profil_dir)
+        self.hata_dir = Path(hata_dir)
+        self.log = log or logging.getLogger(__name__)
+        self.headless = headless
+
+    # --- tarayıcı ---
+    def _baslat(self, p):
+        self.profil_dir.mkdir(parents=True, exist_ok=True)
+        ayar = dict(headless=self.headless, viewport={"width": 1366, "height": 900}, locale="en-US",
+                    args=["--disable-blink-features=AutomationControlled"])
+        try:
+            ctx = p.chromium.launch_persistent_context(str(self.profil_dir), channel="chrome", **ayar)
+        except Exception as e:
+            self.log.warning("Sistem Chrome'u açılamadı (%s), Playwright Chromium kullanılıyor", e)
+            ctx = p.chromium.launch_persistent_context(str(self.profil_dir), **ayar)
+        sayfa = ctx.pages[0] if ctx.pages else ctx.new_page()
+        sayfa.set_default_timeout(30_000)
+        return ctx, sayfa
+
+    def giris(self) -> None:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            ctx, sayfa = self._baslat(p)
+            sayfa.goto(s.GIRIS_URL)
+            input("Açılan pencerede TikTok'a giriş yap, bitince bu pencereye dönüp Enter'a bas... ")
+            ctx.close()
+
+    # --- yardımcılar ---
+    def _bekle(self, a: float = 0.6, b: float = 1.8) -> None:
+        time.sleep(random.uniform(a, b))
+
+    def _yaz(self, sayfa, metin: str) -> None:
+        for harf in metin:
+            sayfa.keyboard.type(harf)
+            time.sleep(random.uniform(0.03, 0.11))
+
+    def _popuplari_kapat(self, sayfa) -> None:
+        for secici in s.KAPAT_BUTONLARI:
+            try:
+                b = sayfa.locator(secici).first
+                if b.is_visible(timeout=500):
+                    b.click()
+                    self._bekle(0.3, 0.8)
+            except Exception:
+                pass
+
+    def _ekran_kaydet(self, sayfa, ad: str) -> Path | None:
+        try:
+            self.hata_dir.mkdir(parents=True, exist_ok=True)
+            yol = self.hata_dir / f"{datetime.now():%Y%m%d_%H%M%S}_{ad}.png"
+            sayfa.screenshot(path=str(yol), full_page=True)
+            yol.with_suffix(".html").write_text(sayfa.content(), encoding="utf-8")
+            return yol
+        except Exception:
+            return None
+
+    # --- adımlar ---
+    def _dosya_sec(self, sayfa, video: Path) -> None:
+        sayfa.locator(s.DOSYA_INPUT).first.set_input_files(str(video))
+        paylas = sayfa.locator(s.PAYLAS_BUTON)
+        bitis = time.time() + 600
+        while time.time() < bitis:
+            tamam = any(sayfa.locator(x).count() for x in s.YUKLEME_TAMAM)
+            aktif = (paylas.count() > 0 and paylas.first.is_enabled()
+                     and paylas.first.get_attribute("aria-disabled") != "true")
+            if tamam and aktif:
+                return
+            time.sleep(2)
+        raise TikTokHatasi("Video 10 dakikada yüklenmedi")
+
+    def _aciklama_ve_etiketler(self, sayfa, aciklama: str, etiketler: list[str]) -> None:
+        editor = sayfa.locator(s.ACIKLAMA_EDITOR).first
+        editor.click()
+        sayfa.keyboard.press("Control+A")
+        sayfa.keyboard.press("Delete")
+        self._yaz(sayfa, aciklama)
+        for etiket in etiketler:
+            self._yaz(sayfa, f" #{etiket}")
+            oneriler = sayfa.locator(s.ETIKET_ONERI_OGE)
+            try:
+                oneriler.first.wait_for(state="visible", timeout=5000)
+                self._bekle(0.4, 0.9)
+                eslesen = oneriler.filter(has_text=re.compile(rf"^#?{re.escape(etiket)}\b", re.IGNORECASE))
+                if eslesen.count():
+                    eslesen.first.click()
+                    self._bekle()
+                    continue
+            except Exception:
+                pass
+            self.log.warning("Etiket önerisi bulunamadı, düz metin kaldı: #%s", etiket)
+            sayfa.keyboard.type(" ")
+
+    def _gorunurluk(self, sayfa, gorunurluk: str) -> None:
+        metin = s.GORUNURLUK_METIN[gorunurluk]
+        sayfa.locator(s.GORUNURLUK_ACICI).first.click()
+        self._bekle(0.4, 0.9)
+        sayfa.get_by_role("option", name=metin).or_(sayfa.get_by_text(metin, exact=True)).first.click()
+        self._bekle()
+
+    def _zamanla(self, sayfa, zaman: datetime) -> None:
+        zaman = zamani_yuvarla(zaman)
+        sayfa.locator(s.ZAMANLA_SECENEK).first.click()
+        self._bekle()
+        izin = sayfa.locator(s.ZAMANLA_IZIN).first
+        if izin.is_visible(timeout=1500):
+            izin.click()
+            self._bekle()
+        girdiler = sayfa.locator(s.ZAMAN_GIRDILERI)
+        # tarih
+        girdiler.nth(1).click()
+        bugun = datetime.now()
+        for _ in range((zaman.year * 12 + zaman.month) - (bugun.year * 12 + bugun.month)):
+            sayfa.locator(s.TAKVIM_SONRAKI_AY).first.click()
+            self._bekle(0.3, 0.6)
+        sayfa.locator(s.TAKVIM_GUN).filter(has_text=re.compile(rf"^{zaman.day}$")).first.click()
+        self._bekle()
+        # saat ve dakika
+        girdiler.nth(0).click()
+        sayfa.locator(s.SAAT_SECENEK).filter(has_text=re.compile(rf"^{zaman.hour:02d}$")).first.click()
+        self._bekle(0.3, 0.6)
+        sayfa.locator(s.DAKIKA_SECENEK).filter(has_text=re.compile(rf"^{zaman.minute:02d}$")).first.click()
+        self._bekle()
+        beklenen = f"{zaman.hour:02d}:{zaman.minute:02d}"
+        if girdiler.nth(0).input_value() != beklenen:
+            raise TikTokHatasi(f"Zamanlama saati ayarlanamadı: {girdiler.nth(0).input_value()} != {beklenen}")
+
+    def _paylas_ve_dogrula(self, sayfa) -> None:
+        sayfa.locator(s.PAYLAS_BUTON).first.click()
+        simdi = sayfa.locator(s.SIMDI_PAYLAS).first
+        try:
+            if simdi.is_visible(timeout=5000):
+                simdi.click()
+        except Exception:
+            pass
+        bitis = time.time() + 180
+        while time.time() < bitis:
+            if re.search(r"/tiktokstudio/content", sayfa.url):
+                return
+            if any(sayfa.locator(x).count() for x in s.BASARI_METINLERI):
+                return
+            time.sleep(2)
+        raise TikTokHatasi("Paylaşım 3 dakika içinde doğrulanamadı")
+
+    def yukle(self, video: Path, aciklama: str, etiketler: list[str], gorunurluk: str,
+              zaman: datetime | None = None) -> None:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            ctx, sayfa = self._baslat(p)
+            try:
+                sayfa.goto(s.YUKLEME_URL)
+                self._bekle(2, 4)
+                if "/login" in sayfa.url:
+                    raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap")
+                self._popuplari_kapat(sayfa)
+                self.log.info("Video seçiliyor: %s", Path(video).name)
+                self._dosya_sec(sayfa, Path(video))
+                self._popuplari_kapat(sayfa)
+                self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
+                self._gorunurluk(sayfa, gorunurluk)
+                if zaman:
+                    self._zamanla(sayfa, zaman)
+                self._popuplari_kapat(sayfa)
+                self._paylas_ve_dogrula(sayfa)
+                self.log.info("TikTok paylaşımı doğrulandı")
+                self._bekle(3, 5)
+            except TikTokHatasi as e:
+                e.ekran = e.ekran or self._ekran_kaydet(sayfa, "tiktok")
+                raise
+            except Exception as e:
+                raise TikTokHatasi(f"TikTok yükleme hatası: {e}", self._ekran_kaydet(sayfa, "tiktok")) from e
+            finally:
+                ctx.close()
