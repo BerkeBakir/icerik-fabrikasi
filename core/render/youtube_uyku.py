@@ -15,11 +15,12 @@ def tekrar_sayisi(hikaye_sn: float, ara_sn: float, hedef_sn: float, en_fazla: in
 
 
 def _anlatim_filtresi(n: int, ara_sn: float) -> str:
-    on = f"[1:a]{_SES_BICIMI},apad=pad_dur={ara_sn}"
+    """Her tekrar ayrı bir girdi (1..n): concat sırayla okur, tamponlama olmaz."""
+    parcalar = [f"[{i}:a]{_SES_BICIMI},apad=pad_dur={ara_sn}[h{i}]" for i in range(1, n + 1)]
     if n == 1:
-        return on + "[anl]"
-    etiketler = "".join(f"[h{i}]" for i in range(n))
-    return f"{on},asplit={n}{etiketler};{etiketler}concat=n={n}:v=0:a=1[anl]"
+        return parcalar[0].replace("[h1]", "[anl]")
+    etiketler = "".join(f"[h{i}]" for i in range(1, n + 1))
+    return ";".join(parcalar) + f";{etiketler}concat=n={n}:v=0:a=1[anl]"
 
 
 def render_youtube(arka_plan: Path, hikaye_ses: Path, ortam: Path, seviye: float, tekrar: int,
@@ -30,13 +31,14 @@ def render_youtube(arka_plan: Path, hikaye_ses: Path, ortam: Path, seviye: float
     fade_d = min(30.0, hedef_sn / 2)
     filtre = (
         _anlatim_filtresi(n, ara_sn) + ";"
-        f"[2:a]{_SES_BICIMI},volume={seviye}[ort];"
+        f"[{n + 1}:a]{_SES_BICIMI},volume={seviye}[ort];"
         f"[anl][ort]amix=inputs=2:duration=longest:normalize=0,"
+        f"alimiter=limit=0.95,"
         f"afade=t=out:st={hedef_sn - fade_d}:d={fade_d}[a]"
     )
     medya.ffmpeg([
         "-stream_loop", "-1", "-i", arka_plan,
-        "-i", hikaye_ses,
+        *[a for _ in range(n) for a in ("-i", hikaye_ses)],
         "-stream_loop", "-1", "-i", ortam,
         "-filter_complex", filtre,
         "-map", "0:v:0", "-map", "[a]",
