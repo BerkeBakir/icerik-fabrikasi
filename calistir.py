@@ -125,14 +125,16 @@ def main(argv=None) -> int:
         if not a.kuru:
             bildirim.mesaj(f"🚨 [{kanal.ad}] Başlatma hatası: {type(e).__name__}: {e}")
         return 1
-    if not a.kuru:
-        bildirim.mesaj(f"🚀 [{kanal.ad}] Çalışma başladı")
     try:
         is_ = calistir(b)
     except OnayGerekli as e:
         log.warning("Manuel onay gerekli: %s", e)
         return 3
-    except Exception:
+    except Exception as e:
+        if not getattr(e, "bildirildi", False):
+            log.exception("Beklenmeyen hata")
+            if not a.kuru:
+                bildirim.mesaj(f"🚨 [{kanal.ad}] Beklenmeyen hata: {type(e).__name__}: {e}")
         return 1
     if is_ is None:
         log.info("Kanal zaten çalışıyor, çıkılıyor")

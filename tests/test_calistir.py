@@ -82,3 +82,36 @@ def test_onay_gerekli_cikis_kodu_3(calisma):
         raise OnayGerekli("Part 1 onay bekliyor")
     calisma(patla)
     assert calistir.main(["t1"]) == 3
+
+
+def test_main_baslangic_mesaji_gondermez(calisma):
+    calisma(lambda b: None)
+    assert calistir.main(["t1"]) == 0
+    assert SahteBildirim.mesajlar == []
+
+
+def test_bildirilmemis_hata_telegrama_gider(calisma):
+    def patla(b):
+        raise ValueError("beklenmedik")
+    calisma(patla)
+    assert calistir.main(["t1"]) == 1
+    assert len(SahteBildirim.mesajlar) == 1
+    assert "ValueError" in SahteBildirim.mesajlar[0] and "beklenmedik" in SahteBildirim.mesajlar[0]
+
+
+def test_bildirilmis_hata_tekrar_gonderilmez(calisma):
+    def patla(b):
+        e = RuntimeError("zaten bildirildi")
+        e.bildirildi = True
+        raise e
+    calisma(patla)
+    assert calistir.main(["t1"]) == 1
+    assert SahteBildirim.mesajlar == []
+
+
+def test_kuru_modda_hata_telegrama_gitmez(calisma):
+    def patla(b):
+        raise ValueError("beklenmedik")
+    calisma(patla)
+    assert calistir.main(["t1", "--kuru"]) == 1
+    assert SahteBildirim.mesajlar == []

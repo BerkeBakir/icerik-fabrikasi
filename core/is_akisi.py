@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from core.ayar import KOK, Kanal, cikti_klasoru, kilit_yolu
+from core.ayar import KOK, Kanal, calisma_kilidi_yolu, cikti_klasoru, kilit_yolu
 from core.db import DB, Is
 from core.kaynak import kaynak_olustur
 from core.kilit import KilitHatasi, dosya_kilidi
@@ -161,10 +161,14 @@ def calistir(b: Baglam) -> Is | None:
     k = b.kanal
     with ExitStack() as yigin:
         try:
-            yigin.enter_context(dosya_kilidi(b.kok / "veri" / f"{k.ad}.calisma.kilit", bekle_sn=-1))
+            yigin.enter_context(dosya_kilidi(calisma_kilidi_yolu(k, b.kok), bekle_sn=-1))
         except KilitHatasi:
             b.log.info("Kanal zaten çalışıyor, çıkılıyor")
+            if not b.kuru:
+                b.bildirim.mesaj(f"⏭ [{k.ad}] Kanal zaten çalışıyor, bu çalıştırma atlandı")
             return None
+        if not b.kuru:
+            b.bildirim.mesaj(f"🚀 [{k.ad}] Çalışma başladı")
         return _calistir(b)
 
 
@@ -189,8 +193,10 @@ def _calistir(b: Baglam) -> Is:
         is_ = (_tiktok if k.platform == "tiktok" else _youtube)(b, is_, klasor)
     except OnayGerekli as e:
         b.log.warning("İş #%d manuel onay bekliyor: %s", is_.id, e)
+        e.bildirildi = True
         raise
     except Exception as e:
+        e.bildirildi = True  # main() tekrar bildirmesin
         if getattr(e, "yetki", False):
             b.db.is_hata(is_.id, f"{type(e).__name__}: {e}", say=False)
             b.log.error("İş #%d oturum/yetki bekliyor: %s", is_.id, e)

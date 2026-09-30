@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.ayar import Etiketler, Kanal, Kaynak, Ses
+from core.ayar import Etiketler, Kanal, Kaynak, Ses, calisma_kilidi_yolu
 from core.db import DB
 from core.is_akisi import Baglam, OnayGerekli, calistir, onayla, yeniden_dene
 from core.kilit import dosya_kilidi
@@ -128,10 +128,34 @@ def test_kuru_mod_yuklemez(tmp_path):
 def test_ayni_kanal_ikinci_calistirma_cikar(tmp_path):
     tt = SahteTikTok()
     b = baglam(tmp_path, tiktok_kanal(), tt)
-    with dosya_kilidi(tmp_path / "veri" / "t1.calisma.kilit"):
+    with dosya_kilidi(calisma_kilidi_yolu(b.kanal, tmp_path)):
         assert calistir(b) is None
     assert b.db.yarim_is("t1") is None
-    assert tt.yuklemeler == [] and b.bildirim.mesajlar == []
+    assert tt.yuklemeler == []
+    assert b.bildirim.mesajlar == ["⏭ [t1] Kanal zaten çalışıyor, bu çalıştırma atlandı"]
+
+
+def test_kuru_calistirma_kilitliyse_bildirim_yok(tmp_path):
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(), kuru=True)
+    with dosya_kilidi(calisma_kilidi_yolu("t1", tmp_path)):
+        assert calistir(b) is None
+    assert b.bildirim.mesajlar == []
+
+
+def test_baslangic_mesaji_kilitten_sonra_gonderilir(tmp_path):
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok())
+    calistir(b)
+    assert b.bildirim.mesajlar[0] == "🚀 [t1] Çalışma başladı"
+    kuru = baglam(tmp_path / "k", tiktok_kanal(), SahteTikTok(), kuru=True)
+    calistir(kuru)
+    assert not any(m.startswith("🚀") for m in kuru.bildirim.mesajlar)
+
+
+def test_bildirilen_hata_isaretlenir(tmp_path):
+    b = baglam(tmp_path, tiktok_kanal(), SahteTikTok(patla=1))
+    with pytest.raises(RuntimeError) as h:
+        calistir(b)
+    assert h.value.bildirildi is True
 
 
 def test_kuru_mod_hikayeyi_tuketmez_ve_her_seferinde_yeniden_uretir(tmp_path):

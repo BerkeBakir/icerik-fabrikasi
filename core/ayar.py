@@ -181,6 +181,11 @@ def cikti_klasoru(kanal: Kanal | str, is_id: int, kok: Path = KOK) -> Path:
     return kok / "cikti" / ad / f"is_{is_id}"
 
 
+def calisma_kilidi_yolu(kanal: Kanal | str, kok: Path = KOK) -> Path:
+    ad = kanal if isinstance(kanal, str) else kanal.ad
+    return kok / "veri" / f"{ad}.calisma.kilit"
+
+
 def kilit_yolu(kok: Path = KOK) -> Path:
     return kok / "veri" / "tiktok.kilit"
 
