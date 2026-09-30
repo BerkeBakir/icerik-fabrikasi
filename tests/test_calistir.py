@@ -115,3 +115,9 @@ def test_kuru_modda_hata_telegrama_gitmez(calisma):
     calisma(patla)
     assert calistir.main(["t1", "--kuru"]) == 1
     assert SahteBildirim.mesajlar == []
+
+
+@pytest.mark.parametrize("ikinci", ["--yeniden-dene", "--giris", "--kuru", "--ses-ornekleri"])
+def test_modlar_birbirini_dislar(ikinci):
+    with pytest.raises(SystemExit):
+        calistir.main(["k", "--onayla", ikinci])
