@@ -18,23 +18,31 @@ class Bildirim:
     def _aktif(self) -> bool:
         return bool(self.token and self.chat_id)
 
+    def _gizle(self, e: Exception) -> str:
+        """Hata mesajında token'i gizler."""
+        if self.token:
+            return str(e).replace(self.token, "***")
+        return str(e)
+
     def mesaj(self, metin: str) -> None:
         if not self._aktif():
             return
         try:
-            self.oturum.post(API.format(token=self.token, metot="sendMessage"),
-                             data={"chat_id": self.chat_id, "text": metin[:4000]}, timeout=15)
+            yanit = self.oturum.post(API.format(token=self.token, metot="sendMessage"),
+                                      data={"chat_id": self.chat_id, "text": metin[:4000]}, timeout=15)
+            yanit.raise_for_status()
         except Exception as e:  # bildirim asla işi durdurmaz
-            self.log.warning("Telegram mesajı gönderilemedi: %s", e)
+            self.log.warning("Telegram mesajı gönderilemedi: %s", self._gizle(e))
 
     def foto(self, yol, aciklama: str) -> None:
         if not self._aktif():
             return
         try:
             with open(yol, "rb") as f:
-                self.oturum.post(API.format(token=self.token, metot="sendPhoto"),
-                                 data={"chat_id": self.chat_id, "caption": aciklama[:1000]},
-                                 files={"photo": f}, timeout=30)
+                yanit = self.oturum.post(API.format(token=self.token, metot="sendPhoto"),
+                                         data={"chat_id": self.chat_id, "caption": aciklama[:1000]},
+                                         files={"photo": f}, timeout=30)
+                yanit.raise_for_status()
         except Exception as e:
-            self.log.warning("Telegram fotoğrafı gönderilemedi: %s", e)
+            self.log.warning("Telegram fotoğrafı gönderilemedi: %s", self._gizle(e))
             self.mesaj(aciklama)
