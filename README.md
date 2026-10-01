@@ -8,7 +8,7 @@ py -3.11 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
 .venv/Scripts/python.exe -m playwright install chromium
 ```
-`.env`: `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (isteğe bağlı `GEMINI_MODEL`).
+`.env`: `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (isteğe bağlı `GEMINI_MODELLER`: virgülle ayrılmış yedek model sırası).
 ffmpeg/ffprobe PATH'te olmalı. Eski repolardan taşıma: `.venv/Scripts/python.exe tasima.py`.
 
 ## Kullanım

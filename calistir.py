@@ -65,6 +65,17 @@ def _onay(kanal, onay: bool) -> int:
     return 0
 
 
+def _gemini_modelleri() -> list[str]:
+    from core.llm import VARSAYILAN_MODELLER
+    liste = [m.strip() for m in (ortam("GEMINI_MODELLER", False) or "").split(",") if m.strip()]
+    if liste:
+        return liste
+    eski = (ortam("GEMINI_MODEL", False) or "").strip()
+    if eski:
+        return [eski] + [m for m in VARSAYILAN_MODELLER if m != eski]
+    return list(VARSAYILAN_MODELLER)
+
+
 def main(argv=None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description="İçerik Fabrikası")
@@ -118,7 +129,7 @@ def main(argv=None) -> int:
     try:
         b = Baglam(
             kanal=kanal, db=DB(db_yolu()), bildirim=bildirim, log=log, kok=KOK, kuru=a.kuru,
-            llm=Gemini(ortam("GEMINI_API_KEY"), model=ortam("GEMINI_MODEL", False) or "gemini-2.5-flash", log=log),
+            llm=Gemini(ortam("GEMINI_API_KEY"), modeller=_gemini_modelleri(), log=log),
             tiktok_fabrika=_tiktok_fabrika(log), youtube_yukleyici=_youtube_yukleyici(log),
         )
     except Exception as e:

@@ -78,3 +78,96 @@ def test_afc_kapali():
     g.json_uret("p", SEMA)
     _, _, config = ist.models.cagrilar[0]
     assert config.automatic_function_calling.disable is True
+
+
+# --- model yedekleme ---
+from google.genai import errors as genai_hata  # noqa: E402
+
+
+def _hata(sinif, kod, durum="UNAVAILABLE"):
+    return sinif(kod, {"error": {"code": kod, "message": "high demand", "status": durum}}, None)
+
+
+class ModelaGoreModeller:
+    """model adina gore: Exception ornegi -> firlatir, str -> yanit doner."""
+
+    def __init__(self, davranis):
+        self.davranis = davranis
+        self.cagrilar = []
+
+    def generate_content(self, model, contents, config):
+        self.cagrilar.append(model)
+        d = self.davranis[model]
+        if isinstance(d, Exception):
+            raise d
+        return Yanit(d)
+
+
+class ModelIstemci:
+    def __init__(self, davranis):
+        self.models = ModelaGoreModeller(davranis)
+
+
+def test_asiri_yukte_sonraki_modele_gecer():
+    ist = ModelIstemci({"m1": _hata(genai_hata.ServerError, 503), "m2": '{"a": "b"}'})
+    uykular = []
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=uykular.append)
+    assert g.json_uret("p", SEMA) == {"a": "b"}
+    assert ist.models.cagrilar == ["m1", "m1", "m2"]
+    assert uykular == [10]
+
+
+def test_429_asiri_yuk_sayilir():
+    ist = ModelIstemci({"m1": _hata(genai_hata.ClientError, 429, "RESOURCE_EXHAUSTED"), "m2": '{"a": "b"}'})
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=lambda s: None)
+    assert g.json_uret("p", SEMA) == {"a": "b"}
+    assert ist.models.cagrilar == ["m1", "m1", "m2"]
+
+
+def test_404_hemen_sonraki_model():
+    ist = ModelIstemci({"m1": _hata(genai_hata.ClientError, 404, "NOT_FOUND"), "m2": '{"a": "b"}'})
+    uykular = []
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=uykular.append)
+    assert g.json_uret("p", SEMA) == {"a": "b"}
+    assert ist.models.cagrilar == ["m1", "m2"]
+    assert uykular == []
+
+
+def test_tum_modeller_asiri_yuklu():
+    ist = ModelIstemci({"m1": _hata(genai_hata.ServerError, 503), "m2": _hata(genai_hata.ServerError, 500)})
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=lambda s: None)
+    with pytest.raises(LLMHatasi, match="Tüm Gemini"):
+        g.json_uret("p", SEMA)
+    assert ist.models.cagrilar == ["m1", "m1", "m2", "m2"]
+
+
+@pytest.mark.parametrize("kod", [400, 401, 403])
+def test_yetki_hatasi_hemen_firlar(kod):
+    ist = ModelIstemci({"m1": _hata(genai_hata.ClientError, kod, "PERMISSION_DENIED"), "m2": '{"a": "b"}'})
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=lambda s: None)
+    with pytest.raises(genai_hata.ClientError):
+        g.json_uret("p", SEMA)
+    assert ist.models.cagrilar == ["m1"]
+
+
+def test_llm_hatasi_ayni_modelde_tekrar_sonra_firlar_yedege_gecmez():
+    ist = ModelIstemci({"m1": "bozuk", "m2": '{"a": "b"}'})
+    g = Gemini("k", modeller=["m1", "m2"], istemci=ist, uyku=lambda s: None)
+    with pytest.raises(LLMHatasi, match="geçersiz"):
+        g.json_uret("p", SEMA)
+    assert ist.models.cagrilar == ["m1"] * 3
+
+
+def test_eski_model_kwarg_tek_elemanli_liste():
+    ist = SahteIstemci(['{"a": "b"}'])
+    g = Gemini("k", model="m1", istemci=ist)
+    assert g.modeller == ["m1"]
+    g.json_uret("p", SEMA)
+    assert ist.models.cagrilar[0][0] == "m1"
+
+
+def test_varsayilan_modeller():
+    from core.llm import VARSAYILAN_MODELLER
+    g = Gemini("k", istemci=SahteIstemci([]))
+    assert g.modeller == VARSAYILAN_MODELLER
+    assert VARSAYILAN_MODELLER[0] == "gemini-2.5-flash"
