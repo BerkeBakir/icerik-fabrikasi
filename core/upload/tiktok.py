@@ -157,7 +157,8 @@ class TikTokYukleyici:
             oneriler = sayfa.locator(s.ETIKET_ONERI_OGE)
             if self._gorunurse(oneriler.first, 5000):
                 self._bekle(0.4, 0.9)
-                eslesen = oneriler.filter(has_text=s.etiket_oneri_deseni(etiket))
+                eslesen = oneriler.filter(
+                    has=sayfa.locator(s.ETIKET_ONERI_METIN).filter(has_text=s.etiket_oneri_deseni(etiket)))
                 if eslesen.count():
                     try:
                         eslesen.first.click()

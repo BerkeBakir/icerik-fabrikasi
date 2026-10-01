@@ -55,6 +55,7 @@ class Kanal:
     profil: str | None = None
     parca2_gecikme_dk: int = 120
     parca2_yontem: str = "tiktok_zamanla"
+    arka_plan_kredi: str | None = None
     token: str | None = None
     tekrar: int = 5
     tekrar_arasi_sn: float = 8.0
@@ -143,6 +144,9 @@ def kanal_yukle(ad: str, kok: Path = KOK) -> Kanal:
             raise AyarHatasi(f"{yer}: parca2_yontem şunlardan biri olmalı: {sorted(PARCA2_YONTEMLERI)}")
         if kanal.parca2_yontem == "tiktok_zamanla" and not 15 <= kanal.parca2_gecikme_dk <= 14400:
             raise AyarHatasi(f"{yer}: parca2_gecikme_dk TikTok zamanlaması için 15-14400 dk arası olmalı")
+        if kanal.parca2_yontem == "tiktok_zamanla" and gorunurluk == "sadece_ben":
+            raise AyarHatasi(f"{yer}: TikTok gizli videoları zamanlayamaz; sadece_ben ile parca2_yontem: bekle kullan")
+        kanal.arka_plan_kredi = (d.get("arka_plan_kredi") or "").strip() or None
     else:
         kanal.token = _zorunlu(d, "token", yer)
         kanal.tekrar = int(d.get("tekrar", 5))

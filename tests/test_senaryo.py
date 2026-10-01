@@ -29,6 +29,13 @@ def test_tiktok_aciklama_etiketleri_siler():
     assert tiktok_aciklama(2, "Crazy story").startswith("PART 2 (Final) | ")
 
 
+def test_tiktok_aciklama_kredi_satiri_ekler():
+    assert tiktok_aciklama(1, "Crazy story", "Background: Orbital") == "PART 1 | Crazy story\n\nBackground: Orbital"
+    assert tiktok_aciklama(1, "Crazy story", "  ") == "PART 1 | Crazy story"
+    uzun = tiktok_aciklama(1, "x" * 3000, "Background: Orbital")
+    assert len(uzun) == 2000 and uzun.endswith("\n\nBackground: Orbital")
+
+
 def test_tiktok_senaryo_hook_ve_son_cumleyi_garantiler():
     llm = SahteLLM({"hook": "You won't believe this.", "part1": "It started on Monday.",
                     "part2": "In the end he left.", "aciklama": "desc", "etiketler": ["#Drama", "aita"]})

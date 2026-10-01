@@ -78,10 +78,11 @@ def etiketleri_birlestir(sabit: list[str], llm: list[str], llm_ekle: int) -> lis
     return sonuc
 
 
-def tiktok_aciklama(parca: int, aciklama: str) -> str:
+def tiktok_aciklama(parca: int, aciklama: str, kredi: str | None = None) -> str:
     temiz = re.sub(r"\s+", " ", re.sub(r"#\w+", "", aciklama)).strip()
     on_ek = "PART 1 | " if parca == 1 else "PART 2 (Final) | "
-    return (on_ek + temiz)[:2000]
+    kredi_satiri = f"\n\n{kredi.strip()}" if kredi and kredi.strip() else ""
+    return (on_ek + temiz)[:2000 - len(kredi_satiri)] + kredi_satiri
 
 
 def tiktok_senaryo(llm, hikaye: Hikaye, etiket_sayisi: int) -> TiktokSenaryo:

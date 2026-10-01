@@ -111,7 +111,7 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
     etiketler = etiketleri_birlestir(k.etiketler.sabit, s.etiketler, k.etiketler.llm_ekle)
     yukleyici = b.tiktok_fabrika(k)
     if not is_.gecti_mi("parca1_yuklendi"):
-        _parca_yukle(b, is_, 1, yukleyici, Path(is_.veri["video"]["part1"]), tiktok_aciklama(1, s.aciklama),
+        _parca_yukle(b, is_, 1, yukleyici, Path(is_.veri["video"]["part1"]), tiktok_aciklama(1, s.aciklama, k.arka_plan_kredi),
                      etiketler, k.gorunurluk, None)
         is_ = db.is_ilerlet(is_.id, "parca1_yuklendi", parca1_zaman=b.simdi().isoformat())
         b.bildirim.mesaj(f"✅ [{k.ad}] Part 1 yayında")
@@ -124,7 +124,7 @@ def _tiktok(b: Baglam, is_: Is, klasor: Path) -> Is:
             b.log.info("Part 2 için %.0f sn bekleniyor", kalan)
             b.uyku(kalan)
         zaman = None
-    etkin = _parca_yukle(b, is_, 2, yukleyici, Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama),
+    etkin = _parca_yukle(b, is_, 2, yukleyici, Path(is_.veri["video"]["part2"]), tiktok_aciklama(2, s.aciklama, k.arka_plan_kredi),
                          etiketler, k.gorunurluk, zaman)
     if zaman is not None and etkin is not None:
         zaman = etkin

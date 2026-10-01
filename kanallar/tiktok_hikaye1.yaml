@@ -8,6 +8,7 @@ kaynak:
   max: 4000
 ses: {motor: edge, ses: en-US-AndrewMultilingualNeural, hiz: "+10%"}
 arka_plan: assets/arka_plan/orbital.mp4
+arka_plan_kredi: "Background: Orbital - No Copyright Gameplay"   # açıklamanın sonuna eklenir
 etiketler:
   sabit: [storytime, reddit, redditstories]
   llm_ekle: 3

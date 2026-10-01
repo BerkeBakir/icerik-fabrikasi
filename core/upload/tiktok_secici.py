@@ -11,8 +11,8 @@ GORUNURLUK_SECENEK_ROL = "option"
 
 DOSYA_INPUT = 'input[type="file"]'
 ACIKLAMA_EDITOR = 'div.public-DraftEditor-content[contenteditable="true"], div[contenteditable="true"]'
-ETIKET_ONERI_OGE = ('div.mention-list-popover-item, div[class*="hashtag-suggestion"] div[class*="item"], '
-                    'div[class*="mention-list"] div[class*="item"]')
+ETIKET_ONERI_OGE = 'div.hashtag-suggestion-item, div.mention-list-popover div[role="option"]'
+ETIKET_ONERI_METIN = 'span.hash-tag-topic'  # öğe içindeki "#etiket" (yanında "62.2M posts" yazar)
 PAYLAS_BUTON = 'button[data-e2e="post_video_button"]'
 
 # Yükleme bitti göstergesi (herhangi biri görününce)
@@ -31,9 +31,9 @@ GORUNURLUK_ACICI = 'div[data-e2e="video_visibility_container"] button, div:has(>
 GORUNURLUK_METIN = {"herkes": "Everyone", "arkadaslar": "Friends", "sadece_ben": "Only you"}
 
 # Zamanlama
-ZAMANLA_SECENEK = 'label:has-text("Schedule"), input[value="schedule"]'
+ZAMANLA_SECENEK = 'label:has(input[value="schedule"])'
 ZAMANLA_IZIN = 'button:has-text("Allow")'
-ZAMAN_GIRDILERI = 'div[class*="scheduled-picker"] input, div[class*="schedule"] input'  # [0]=saat, [1]=tarih
+ZAMAN_GIRDILERI = 'div.scheduled-picker input.TUXTextInputCore-input'  # [0]=saat "19:05", [1]=tarih "2026-10-01"
 TAKVIM_SONRAKI_AY = 'div[class*="calendar"] span[class*="arrow"]:last-child'
 TAKVIM_GUN = 'div[class*="calendar"] span[class*="day"][class*="valid"]'
 SAAT_SECENEK = 'span[class*="tiktok-timepicker-left"]'
@@ -46,7 +46,7 @@ BASARI_METINLERI = ['text=/your video (has been|is being) (uploaded|posted|publi
 
 
 def etiket_oneri_deseni(etiket: str) -> re.Pattern:
-    return re.compile(rf"^#?{re.escape(etiket)}\b", re.IGNORECASE)
+    return re.compile(rf"^\s*#?{re.escape(etiket)}\s*$", re.IGNORECASE)
 
 
 def tam_metin_deseni(metin: str) -> re.Pattern:

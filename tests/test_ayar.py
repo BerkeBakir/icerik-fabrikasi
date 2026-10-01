@@ -85,6 +85,21 @@ def test_gecikme_tiktok_sinirinda_olmali(tmp_path):
         kanal_yukle("t1", kok=tmp_path)
 
 
+def test_gizli_video_tiktok_zamanlamasiyla_reddedilir(tmp_path):
+    yaz(tmp_path, "t1", TIKTOK.replace("gorunurluk: herkes", "gorunurluk: sadece_ben"))
+    with pytest.raises(AyarHatasi, match="gizli"):
+        kanal_yukle("t1", kok=tmp_path)
+    yaz(tmp_path, "t2", TIKTOK.replace("gorunurluk: herkes", "gorunurluk: sadece_ben") + "parca2_yontem: bekle\n")
+    assert kanal_yukle("t2", kok=tmp_path).gorunurluk == "sadece_ben"
+
+
+def test_arka_plan_kredisi(tmp_path):
+    yaz(tmp_path, "t1", TIKTOK)
+    assert kanal_yukle("t1", kok=tmp_path).arka_plan_kredi is None
+    yaz(tmp_path, "t2", TIKTOK + 'arka_plan_kredi: "Background: Orbital - No Copyright Gameplay"\n')
+    assert kanal_yukle("t2", kok=tmp_path).arka_plan_kredi == "Background: Orbital - No Copyright Gameplay"
+
+
 def test_youtube_reddit_kaynagini_reddeder(tmp_path):
     yaz(tmp_path, "y1", YOUTUBE.replace(
         "{tip: uretim, prompt: prompts/uyku_hikayesi.txt, kelime: 2500}",

@@ -29,7 +29,8 @@ from core.upload.tiktok import TikTokYukleyici, zamanlama_dogrula
 
 def test_secici_desenleri():
     assert s.etiket_oneri_deseni("story").search("#storytime") is None
-    assert s.etiket_oneri_deseni("story").search("#story 1.2M views")
+    assert s.etiket_oneri_deseni("story").search("#story")
+    assert s.etiket_oneri_deseni("Story").search(" story ")
     assert s.tam_metin_deseni("5").search("15") is None
     assert s.tam_metin_deseni("5").search("5")
 
