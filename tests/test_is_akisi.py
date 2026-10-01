@@ -6,7 +6,8 @@ import pytest
 
 from core.ayar import Etiketler, Kanal, Kaynak, Ses, calisma_kilidi_yolu
 from core.db import DB
-from core.is_akisi import Baglam, OnayGerekli, calistir, onayla, yeniden_dene
+from core.is_akisi import Baglam, OnayGerekli, calistir, onayla, sure_metni, yeniden_dene
+from core.render.youtube_uyku import YoutubeRender
 from core.kilit import dosya_kilidi
 from core.modeller import Hikaye
 from core.tts import Kelime, SesSonucu
@@ -243,7 +244,7 @@ def test_youtube_mutlu_yol(tmp_path):
         Path(cikti).parent.mkdir(parents=True, exist_ok=True)
         Path(cikti).write_bytes(b"v")
         yuklenen["hedef"] = hedef_sn
-        return 4
+        return YoutubeRender(tekrar=4, sure_sn=5570)
 
     def youtube_yukleyici(kanal, video, baslik, aciklama, etiketler):
         yuklenen.update(baslik=baslik, aciklama=aciklama, etiketler=etiketler)
@@ -255,6 +256,7 @@ def test_youtube_mutlu_yol(tmp_path):
     is_ = calistir(b)
     assert is_.durum == "yuklendi" and is_.veri["video_id"] == "vid1"
     assert yuklenen["hedef"] == 5400
+    assert is_.veri["tekrar"] == 4 and is_.veri["sure_sn"] == 5570
     assert yuklenen["baslik"] == "Rain - Deep Sleep Story (1.5 Hours)"
     assert yuklenen["aciklama"].endswith("#sleep")
 
@@ -369,7 +371,7 @@ def test_youtube_yetki_hatasi_deneme_yakmaz(tmp_path):
     def render_youtube(arka_plan, hikaye_ses, ortam, seviye, tekrar, ara_sn, hedef_sn, cikti):
         Path(cikti).parent.mkdir(parents=True, exist_ok=True)
         Path(cikti).write_bytes(b"v")
-        return 4
+        return YoutubeRender(tekrar=4, sure_sn=5570)
 
     def youtube_yukleyici(kanal, video, baslik, aciklama, etiketler):
         from core.upload.youtube import YukleHatasi
@@ -416,3 +418,11 @@ def test_onay_bekleyen_calistirma_baslangic_mesaji_gondermez_ve_tek_uyari_loglar
             calistir(b)
     assert b.bildirim.mesajlar == []
     assert len([r for r in caplog.records if r.levelno >= logging.WARNING and "onay" in r.getMessage()]) == 1
+
+
+@pytest.mark.parametrize("sn,beklenen", [
+    (5570, "1.5 Hours"), (3600, "1 Hour"), (4300, "1 Hour"), (2400, "40 Minutes"),
+    (7300, "2 Hours"), (2700, "1 Hour" if False else "45 Minutes" if False else "1 Hour"),
+])
+def test_sure_metni(sn, beklenen):
+    assert sure_metni(sn) == beklenen

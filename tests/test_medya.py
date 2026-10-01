@@ -24,3 +24,10 @@ def test_sure_bozuk_dosyada_hata(tmp_path):
     yol.write_bytes(b"abc")
     with pytest.raises(medya.MedyaHatasi):
         medya.sure(yol)
+
+
+@pytest.mark.ffmpeg
+def test_video_boyutu(tmp_path):
+    yol = tmp_path / "v.mp4"
+    medya.ffmpeg(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=10", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", yol])
+    assert medya.video_boyutu(yol) == (320, 240)

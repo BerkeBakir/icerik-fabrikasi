@@ -4,7 +4,7 @@ kaynak: {tip: uretim, prompt: prompts/uyku_hikayesi.txt, kelime: 2500}
 ses: {motor: kokoro, ses: af_heart, hiz: 0.85}
 tekrar: 5
 tekrar_arasi_sn: 8
-hedef_sure_dk: 90
+hedef_sure_dk: 90   # hedef; gerçek uzunluk, toplamı buna en yakın olan tekrar sayısıyla belirlenir (+~10 sn kapanış)
 arka_plan: assets/arka_plan/gece.mp4
 ortam_sesi: {dosya: assets/yagmur.mp3, seviye: 0.25}
 gorunurluk: private   # ilk hafta kontrol için; sonra public

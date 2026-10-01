@@ -49,9 +49,13 @@ class Baglam:
     uyku: Callable = time.sleep
 
 
-def _saat_metni(dk: float) -> str:
-    saat = dk / 60
-    return "1 Hour" if saat == 1 else f"{saat:g} Hours"
+def sure_metni(sn: float) -> str:
+    """Başlık için süre: >=45 dk en yakın yarım saat, aksi halde en yakın 5 dakika."""
+    dk = sn / 60
+    if dk >= 45:
+        saat = int(dk / 30 + 0.5) / 2
+        return "1 Hour" if saat == 1 else f"{saat:g} Hours"
+    return f"{max(5, int(dk / 5 + 0.5) * 5)} Minutes"
 
 
 def _parca_yukle(b: Baglam, is_: Is, parca: int, yukleyici, *args):
@@ -144,13 +148,13 @@ def _youtube(b: Baglam, is_: Is, klasor: Path) -> Is:
         is_ = db.is_ilerlet(is_.id, "ses_hazir", ses=ses.sozluk())
     if not is_.gecti_mi("video_hazir"):
         video = klasor / "final.mp4"
-        n = b.render_youtube(k.arka_plan, Path(is_.veri["ses"]["yol"]), k.ortam_sesi, k.ortam_seviye,
+        r = b.render_youtube(k.arka_plan, Path(is_.veri["ses"]["yol"]), k.ortam_sesi, k.ortam_seviye,
                              k.tekrar, k.tekrar_arasi_sn, k.hedef_sure_dk * 60, video)
-        is_ = db.is_ilerlet(is_.id, "video_hazir", video=str(video), tekrar=n)
+        is_ = db.is_ilerlet(is_.id, "video_hazir", video=str(video), tekrar=r.tekrar, sure_sn=r.sure_sn)
     if b.kuru:
         b.log.info("Kuru mod: video hazır (%s tekrar), yükleme yapılmadı: %s", is_.veri["tekrar"], is_.veri["video"])
         return is_
-    baslik = f"{p.baslik} - Deep Sleep Story ({_saat_metni(k.hedef_sure_dk)})"
+    baslik = f"{p.baslik} - Deep Sleep Story ({sure_metni(is_.veri['sure_sn'])})"
     aciklama = p.aciklama + "\n\n" + " ".join(f"#{e}" for e in p.etiketler[:3])
     vid = b.youtube_yukleyici(k, Path(is_.veri["video"]), baslik, aciklama, p.etiketler)
     is_ = db.is_ilerlet(is_.id, "yuklendi", video_id=vid)

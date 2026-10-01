@@ -28,5 +28,18 @@ def sure(yol) -> float:
         raise MedyaHatasi(f"süre okunamadı: {yol}: {r.stderr[-500:]}") from None
 
 
+def video_boyutu(yol) -> tuple[int, int]:
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+         "-of", "csv=p=0", str(yol)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    try:
+        genislik, yukseklik = r.stdout.strip().split(",")[:2]
+        return int(genislik), int(yukseklik)
+    except ValueError:
+        raise MedyaHatasi(f"video boyutu okunamadı: {yol}: {r.stderr[-500:]}") from None
+
+
 def araclar_var_mi() -> bool:
     return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))

@@ -20,6 +20,10 @@ ffmpeg/ffprobe PATH'te olmalı. Eski repolardan taşıma: `.venv/Scripts/python.
 .venv/Scripts/python.exe zamanla.py tiktok_hikaye1 --saat 19:00
 ```
 
+## YouTube uyku videosu
+- Hikâye sesi, toplam anlatım süresi `hedef_sure_dk`'ya en yakın olacak sayıda (en çok `tekrar`) tekrarlanır; hikâye kısaltılmaz. Video son tekrardan yaklaşık 10 sn sonra (yalnızca yağmur sesiyle) biter, başlıktaki süre gerçek uzunluktan türetilir.
+- 1080p'den büyük (ör. 4K) arka plan videosu bir kez `<ad>_1080p.mp4` olarak aynı klasöre dönüştürülür ve sonraki çalıştırmalarda yeniden kullanılır.
+
 ## Yeni hesap / kanal
 `kanallar/` altına yeni bir yaml koy (örnek: `ornek_tiktok_korku.yaml`), `--giris` ile oturum aç, `zamanla.py` ile saat ver.
 
