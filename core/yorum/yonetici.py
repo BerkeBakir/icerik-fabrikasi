@@ -16,6 +16,7 @@ SIKAYET_SINIR = 5
 BEGENI_SINIR = 30
 SINIFLANDIRMA_SINIR = 40
 ARDISIK_HATA_SINIR = 3
+UNUTMA_GUN = 8
 
 EYLEM = {"soru": "cevap", "yapici": "cevap", "yorum": "begeni", "hakaret": "sikayet", "spam": "sikayet"}
 DURUM = {"cevap": "cevaplandi", "begeni": "begenildi", "sikayet": "sikayet_edildi"}
@@ -78,11 +79,14 @@ def _kuru(kanal, db, llm, hamlar, log) -> Ozet:
 
 
 def yorumlari_isle(kanal, db: DB, llm, yorumcu, bildirim, log: logging.Logger, kuru: bool = False,
-                   uyku=time.sleep, rastgele=random) -> Ozet:
+                   uyku=time.sleep, rastgele=random, simdi: datetime | None = None) -> Ozet:
     ozet = Ozet()
+    simdi = simdi or datetime.now()
     with yorumcu.oturum() as sayfa:
         hamlar = sayfa.oku()
         log.info("%d yorum okundu", len(hamlar))
+        if not hamlar:
+            log.warning("Hiç yorum okunamadı")
         if kuru:
             return _kuru(kanal, db, llm, hamlar, log)
 
@@ -100,8 +104,9 @@ def yorumlari_isle(kanal, db: DB, llm, yorumcu, bildirim, log: logging.Logger, k
         ardisik_hata = 0
         for y in db.yorum_islenecekler(kanal.ad):
             h = gorunen.get(y.kimlik)
-            if h is None:  # artık listede değil (7 günden eski ya da silinmiş)
-                db.yorum_bitir(y.kimlik, "atlandi")
+            if h is None:  # bu çalıştırmada görünmüyor: yalnız UNUTMA_GUN'den eskiyse atla
+                if datetime.fromisoformat(y.tarih) < simdi - timedelta(days=UNUTMA_GUN):
+                    db.yorum_bitir(y.kimlik, "atlandi")
                 continue
             if y.durum == "yeni":
                 if siniflandirilan >= SINIFLANDIRMA_SINIR:

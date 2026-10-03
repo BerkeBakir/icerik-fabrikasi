@@ -1,6 +1,6 @@
 import logging
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -84,13 +84,13 @@ class SahteBildirim:
         self.fotolar.append((yol, m))
 
 
-def calistir(tmp_path, yorumlar, llm=None, k=None, bozuk=(), kuru=False, db=None):
+def calistir(tmp_path, yorumlar, llm=None, k=None, bozuk=(), kuru=False, db=None, simdi=None):
     db = db or DB(tmp_path / "f.db")
     sayfa = SahteSayfa(yorumlar, bozuk)
     b = SahteBildirim()
     uykular = []
     ozet = yon.yorumlari_isle(k or kanal(), db, llm or SahteLLM(), SahteYorumcu(sayfa), b, LOG, kuru=kuru,
-                              uyku=uykular.append)
+                              uyku=uykular.append, simdi=simdi)
     return ozet, sayfa, b, db, uykular
 
 
@@ -138,6 +138,23 @@ def test_cevap_siniri_tasanlar_bekler(tmp_path):
     llm = SahteLLM()
     ozet, sayfa, _, _, _ = calistir(tmp_path, y, llm=llm, k=kanal(en_fazla=2), db=db)
     assert ozet.cevap == 2 and llm.cagri == 0  # bekleyenler yeniden sınıflandırılmaz
+
+
+def test_gorunmeyen_bekleyen_yorum_korunur(tmp_path):
+    y = [H("u0", "q0?"), H("u1", "q1?")]
+    _, _, _, db, _ = calistir(tmp_path, y, k=kanal(en_fazla=1))
+    kim = yorum_kimligi("t1", "u1", "q1?", "PART 1 | x")
+    assert db.yorum_getir(kim).durum == "bekliyor"
+    ozet, *_ = calistir(tmp_path, [], k=kanal(en_fazla=1), db=db)
+    assert db.yorum_getir(kim).durum == "bekliyor" and ozet.bekleyen == 0
+
+
+def test_gorunmeyen_eski_bekleyen_yorum_atlanir(tmp_path):
+    y = [H("u0", "q0?"), H("u1", "q1?")]
+    _, _, _, db, _ = calistir(tmp_path, y, k=kanal(en_fazla=1))
+    kim = yorum_kimligi("t1", "u1", "q1?", "PART 1 | x")
+    calistir(tmp_path, [], k=kanal(en_fazla=1), db=db, simdi=datetime.now() + timedelta(days=9))
+    assert db.yorum_getir(kim).durum == "atlandi"
 
 
 def test_sikayet_siniri(tmp_path):
