@@ -1,6 +1,7 @@
 """SQLite: kullanılan hikâyeler ve yeniden başlatılabilir işler."""
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -30,6 +31,32 @@ class Is:
         return ADIMLAR.index(self.durum) >= ADIMLAR.index(adim)
 
 
+YORUM_ISLENECEK = ("yeni", "bekliyor", "hata")
+
+
+def yorum_kimligi(kanal: str, kullanici: str, metin: str, video: str) -> str:
+    """Studio yorum kimliği vermediği için içerikten türetilen kararlı kimlik."""
+    ham = "\x1f".join([kanal, kullanici.strip().lower(), metin.strip(), video.strip()])
+    return hashlib.sha1(ham.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass
+class Yorum:
+    kimlik: str
+    kanal: str
+    kullanici: str
+    metin: str
+    video: str
+    tur: str | None
+    cevap: str | None
+    konu: str | None
+    oneri: str | None
+    durum: str
+    hata: str | None
+    deneme: int
+    tarih: str
+
+
 class DB:
     def __init__(self, yol: Path):
         Path(yol).parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +70,11 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, kanal TEXT NOT NULL, durum TEXT NOT NULL,
                 veri TEXT NOT NULL, hata TEXT, deneme INTEGER NOT NULL DEFAULT 0,
                 olusturma TEXT NOT NULL, guncelleme TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS yorumlar (
+                kimlik TEXT PRIMARY KEY, kanal TEXT NOT NULL, kullanici TEXT NOT NULL, metin TEXT NOT NULL,
+                video TEXT NOT NULL, tur TEXT, cevap TEXT, konu TEXT, oneri TEXT,
+                durum TEXT NOT NULL, hata TEXT, deneme INTEGER NOT NULL DEFAULT 0,
+                tarih TEXT NOT NULL, guncelleme TEXT NOT NULL);
             """
         )
         self.bag.commit()
@@ -102,3 +134,64 @@ class DB:
         self.bag.execute("UPDATE isler SET durum='iptal', guncelleme=? WHERE id=?", (_simdi(), is_id))
         self.bag.commit()
         return self.is_getir(is_id)
+
+    def son_isler(self, kanal: str, adet: int = 60) -> list[Is]:
+        satirlar = self.bag.execute("SELECT * FROM isler WHERE kanal=? ORDER BY id DESC LIMIT ?", (kanal, adet))
+        return [self._satir(r) for r in satirlar]
+
+    # --- yorumlar ---
+    def _yorum(self, r) -> Yorum:
+        return Yorum(r["kimlik"], r["kanal"], r["kullanici"], r["metin"], r["video"], r["tur"], r["cevap"],
+                     r["konu"], r["oneri"], r["durum"], r["hata"], r["deneme"], r["tarih"])
+
+    def yorum_var_mi(self, kimlik: str) -> bool:
+        return self.bag.execute("SELECT 1 FROM yorumlar WHERE kimlik=?", (kimlik,)).fetchone() is not None
+
+    def yorum_getir(self, kimlik: str) -> Yorum:
+        return self._yorum(self.bag.execute("SELECT * FROM yorumlar WHERE kimlik=?", (kimlik,)).fetchone())
+
+    def yorum_ekle(self, kimlik: str, kanal: str, kullanici: str, metin: str, video: str) -> Yorum:
+        self.bag.execute(
+            "INSERT OR IGNORE INTO yorumlar (kimlik, kanal, kullanici, metin, video, durum, tarih, guncelleme) "
+            "VALUES (?,?,?,?,?,'yeni',?,?)", (kimlik, kanal, kullanici, metin, video, _simdi(), _simdi()))
+        self.bag.commit()
+        return self.yorum_getir(kimlik)
+
+    def yorum_karar(self, kimlik: str, tur: str, cevap: str, konu: str, oneri: str) -> Yorum:
+        self.bag.execute(
+            "UPDATE yorumlar SET tur=?, cevap=?, konu=?, oneri=?, durum='bekliyor', guncelleme=? WHERE kimlik=?",
+            (tur, cevap, konu, oneri, _simdi(), kimlik))
+        self.bag.commit()
+        return self.yorum_getir(kimlik)
+
+    def yorum_bitir(self, kimlik: str, durum: str) -> Yorum:
+        self.bag.execute("UPDATE yorumlar SET durum=?, hata=NULL, guncelleme=? WHERE kimlik=?",
+                         (durum, _simdi(), kimlik))
+        self.bag.commit()
+        return self.yorum_getir(kimlik)
+
+    def yorum_hata(self, kimlik: str, mesaj: str) -> Yorum:
+        mevcut = self.yorum_getir(kimlik)
+        deneme = mevcut.deneme + 1
+        durum = "atlandi" if deneme >= 2 else "hata"
+        self.bag.execute("UPDATE yorumlar SET durum=?, hata=?, deneme=?, guncelleme=? WHERE kimlik=?",
+                         (durum, mesaj[:2000], deneme, _simdi(), kimlik))
+        self.bag.commit()
+        return self.yorum_getir(kimlik)
+
+    def yorum_islenecekler(self, kanal: str) -> list[Yorum]:
+        satirlar = self.bag.execute(
+            f"SELECT * FROM yorumlar WHERE kanal=? AND durum IN ({','.join('?' * len(YORUM_ISLENECEK))}) "
+            "ORDER BY rowid", (kanal, *YORUM_ISLENECEK))
+        return [self._yorum(r) for r in satirlar]
+
+    def yorum_cevap_mi(self, kanal: str, metin: str) -> bool:
+        return self.bag.execute("SELECT 1 FROM yorumlar WHERE kanal=? AND cevap=? AND durum='cevaplandi'",
+                                (kanal, metin.strip())).fetchone() is not None
+
+    def yapici_yorumlar(self, kanal: str, baslangic: datetime) -> list[Yorum]:
+        satirlar = self.bag.execute(
+            "SELECT * FROM yorumlar WHERE kanal=? AND (tur='yapici' OR COALESCE(oneri, '')<>'') AND tarih>=? "
+            "ORDER BY rowid",
+            (kanal, baslangic.isoformat(timespec="seconds")))
+        return [self._yorum(r) for r in satirlar]

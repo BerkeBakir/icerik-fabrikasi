@@ -56,6 +56,9 @@ class Kanal:
     parca2_gecikme_dk: int = 120
     parca2_yontem: str = "tiktok_zamanla"
     arka_plan_kredi: str | None = None
+    yorum_aktif: bool = False
+    yorum_en_fazla: int = 10
+    yorum_hesap: str | None = None
     token: str | None = None
     tekrar: int = 5
     tekrar_arasi_sn: float = 8.0
@@ -147,6 +150,15 @@ def kanal_yukle(ad: str, kok: Path = KOK) -> Kanal:
         if kanal.parca2_yontem == "tiktok_zamanla" and gorunurluk == "sadece_ben":
             raise AyarHatasi(f"{yer}: TikTok gizli videoları zamanlayamaz; sadece_ben ile parca2_yontem: bekle kullan")
         kanal.arka_plan_kredi = (d.get("arka_plan_kredi") or "").strip() or None
+        yd = d.get("yorum") or {}
+        kanal.yorum_aktif = bool(yd.get("aktif", False))
+        kanal.yorum_en_fazla = int(yd.get("en_fazla", 10))
+        kanal.yorum_hesap = (str(yd.get("hesap") or "").strip().lstrip("@").lower()) or None
+        if kanal.yorum_aktif:
+            if not 1 <= kanal.yorum_en_fazla <= 50:
+                raise AyarHatasi(f"{yer}: yorum.en_fazla 1-50 arası olmalı")
+            if not kanal.yorum_hesap:
+                raise AyarHatasi(f"{yer}: yorum.hesap (kanalın TikTok kullanıcı adı) zorunlu")
     else:
         kanal.token = _zorunlu(d, "token", yer)
         kanal.tekrar = int(d.get("tekrar", 5))

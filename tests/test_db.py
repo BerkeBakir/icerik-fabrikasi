@@ -1,4 +1,6 @@
-from core.db import DB
+from datetime import datetime, timedelta
+
+from core.db import DB, yorum_kimligi
 
 
 def test_hikaye_isaretleme(tmp_path):
@@ -65,3 +67,55 @@ def test_hata_sayilmadan_kaydedilir(tmp_path):
     for _ in range(3):
         b = db.is_hata(a.id, "yine", say=False)
     assert b.durum == "video_hazir" and b.deneme == 0
+
+
+def test_yorum_kimligi_kararli_ve_ayirt_edici():
+    a = yorum_kimligi("k1", "ali", "Merhaba", "PART 1 | x")
+    assert a == yorum_kimligi("k1", "ali", "Merhaba", "PART 1 | x")
+    assert len(a) == 16
+    assert a != yorum_kimligi("k1", "ali", "Merhaba", "PART 2 | x")
+    assert a != yorum_kimligi("k2", "ali", "Merhaba", "PART 1 | x")
+
+
+def test_yorum_yasam_dongusu(tmp_path):
+    db = DB(tmp_path / "f.db")
+    kim = yorum_kimligi("k1", "ali", "Is this real?", "PART 1 | x")
+    assert not db.yorum_var_mi(kim)
+    y = db.yorum_ekle(kim, "k1", "ali", "Is this real?", "PART 1 | x")
+    assert y.durum == "yeni" and y.deneme == 0 and y.tur is None
+    assert db.yorum_ekle(kim, "k1", "ali", "baska", "v").metin == "Is this real?"  # ikinci ekleme dokunmaz
+    y = db.yorum_karar(kim, "soru", "Yes, it's from Reddit!", "", "")
+    assert y.durum == "bekliyor" and y.tur == "soru" and y.cevap == "Yes, it's from Reddit!"
+    assert [x.kimlik for x in db.yorum_islenecekler("k1")] == [kim]
+    y = db.yorum_bitir(kim, "cevaplandi")
+    assert y.durum == "cevaplandi" and db.yorum_islenecekler("k1") == []
+    assert db.yorum_cevap_mi("k1", "Yes, it's from Reddit!")
+    assert not db.yorum_cevap_mi("k2", "Yes, it's from Reddit!")
+
+
+def test_yorum_hata_ikincide_atlanir(tmp_path):
+    db = DB(tmp_path / "f.db")
+    kim = yorum_kimligi("k1", "a", "b", "c")
+    db.yorum_ekle(kim, "k1", "a", "b", "c")
+    y = db.yorum_hata(kim, "buton yok")
+    assert y.durum == "hata" and y.deneme == 1 and y.hata == "buton yok"
+    assert [x.kimlik for x in db.yorum_islenecekler("k1")] == [kim]
+    assert db.yorum_hata(kim, "yine yok").durum == "atlandi"
+
+
+def test_yapici_yorumlar_tarihe_gore(tmp_path):
+    db = DB(tmp_path / "f.db")
+    for i, tur in enumerate(["yapici", "soru", "yapici"]):
+        kim = yorum_kimligi("k1", f"u{i}", "m", "v")
+        db.yorum_ekle(kim, "k1", f"u{i}", "m", "v")
+        db.yorum_karar(kim, tur, "c", "ses" if tur == "yapici" else "", "Daha yavaş" if tur == "yapici" else "")
+    simdi = datetime.now()
+    assert len(db.yapici_yorumlar("k1", simdi - timedelta(days=7))) == 2
+    assert db.yapici_yorumlar("k1", simdi + timedelta(days=1)) == []
+
+
+def test_son_isler(tmp_path):
+    db = DB(tmp_path / "f.db")
+    a, b = db.is_olustur("k1"), db.is_olustur("k1")
+    db.is_olustur("k2")
+    assert [x.id for x in db.son_isler("k1")] == [b.id, a.id]

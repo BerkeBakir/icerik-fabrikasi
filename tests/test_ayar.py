@@ -144,3 +144,26 @@ def test_hiz_varsayilanlari(tmp_path):
     yaz(tmp_path, "y1", YOUTUBE.replace(", hiz: 0.85", ""))
     assert kanal_yukle("t1", kok=tmp_path).ses.hiz == "+0%"
     assert kanal_yukle("y1", kok=tmp_path).ses.hiz == 1.0
+
+
+def test_yorum_ayari_varsayilan_kapali(tmp_path):
+    yaz(tmp_path, "t1", TIKTOK)
+    k = kanal_yukle("t1", kok=tmp_path)
+    assert k.yorum_aktif is False and k.yorum_en_fazla == 10 and k.yorum_hesap is None
+
+
+def test_yorum_ayari_okunur(tmp_path):
+    yaz(tmp_path, "t1", TIKTOK + "yorum: {aktif: true, en_fazla: 7, hesap: '@SlumberLab'}\n")
+    k = kanal_yukle("t1", kok=tmp_path)
+    assert k.yorum_aktif is True and k.yorum_en_fazla == 7 and k.yorum_hesap == "slumberlab"
+
+
+@pytest.mark.parametrize("ek,mesaj", [
+    ("yorum: {aktif: true, en_fazla: 10}\n", "hesap"),
+    ("yorum: {aktif: true, en_fazla: 0, hesap: x}\n", "en_fazla"),
+    ("yorum: {aktif: true, en_fazla: 51, hesap: x}\n", "en_fazla"),
+])
+def test_yorum_ayari_dogrulanir(tmp_path, ek, mesaj):
+    yaz(tmp_path, "t1", TIKTOK + ek)
+    with pytest.raises(AyarHatasi, match=mesaj):
+        kanal_yukle("t1", kok=tmp_path)
