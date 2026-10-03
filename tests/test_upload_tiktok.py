@@ -215,7 +215,7 @@ def _yukleyici(tmp_path, monkeypatch, paylas):
     monkeypatch.setattr(t, "sync_playwright", lambda: _SahtePw())
     y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
     monkeypatch.setattr(y, "_baslat", lambda p: (_SahteCtx(), _SahteYuklemeSayfasi()))
-    for ad in ("_dosya_sec", "_aciklama_ve_etiketler", "_gorunurluk", "_popuplari_kapat", "_bekle"):
+    for ad in ("_dosya_sec", "_aciklama_yaz", "_gorunurluk", "_popuplari_kapat", "_bekle"):
         monkeypatch.setattr(y, ad, lambda *a, **kw: None)
     monkeypatch.setattr(y, "_ekran_kaydet", lambda *a, **kw: None)
     monkeypatch.setattr(y, "_paylas_ve_dogrula", lambda sayfa: paylas(y))
@@ -261,3 +261,40 @@ def test_tiklama_sonrasi_sade_istisna_gonderildi_olur(tmp_path, monkeypatch):
     with pytest.raises(TikTokHatasi) as e:
         y.yukle(tmp_path / "v.mp4", "a", [], "herkes")
     assert e.value.gonderildi is True
+
+
+ACK = "PART 2 (Final) | Our stress is high, my feelings for my husband.\n\nBackground: Orbital"
+ETK = ["storytime", "reddit"]
+
+
+def test_aciklama_dogru_mu():
+    from core.upload.tiktok import aciklama_dogru_mu
+    tam = "PART 2 (Final) | Our stress is high, my feelings for my husband.\nBackground: Orbital #storytime  #reddit "
+    assert aciklama_dogru_mu(tam, ACK, ETK)
+    # yazarken ekrana dokunulunca olan: metin kesildi, bir etiket kayboldu
+    assert not aciklama_dogru_mu("PART 2 (Final) | Our stress is high, my feelings for my hu  #reddit", ACK, ETK)
+    assert not aciklama_dogru_mu(tam.replace("#storytime", "#storytimes"), ACK, ETK)
+    assert not aciklama_dogru_mu("x " + tam, ACK, ETK)
+
+
+def _yazici(tmp_path, monkeypatch, metinler):
+    y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
+    yazilan = []
+    monkeypatch.setattr(y, "_aciklama_ve_etiketler", lambda *a: yazilan.append(1))
+    monkeypatch.setattr(y, "_bekle", lambda *a: None)
+    sira = iter(metinler)
+    monkeypatch.setattr(y, "_editor_metni", lambda sayfa: next(sira))
+    return y, yazilan
+
+
+def test_bozuk_aciklama_bastan_yazilir(tmp_path, monkeypatch):
+    y, yazilan = _yazici(tmp_path, monkeypatch, ["PART 2 (Final) | Our stress #reddit", ACK + " #storytime #reddit"])
+    y._aciklama_yaz(object(), ACK, ETK)
+    assert len(yazilan) == 2
+
+
+def test_aciklama_hep_bozuksa_paylasmadan_hata(tmp_path, monkeypatch):
+    y, yazilan = _yazici(tmp_path, monkeypatch, ["bozuk"] * 3)
+    with pytest.raises(TikTokHatasi, match="doğru yazılamadı") as e:
+        y._aciklama_yaz(object(), ACK, ETK)
+    assert len(yazilan) == 3 and e.value.gonderildi is False

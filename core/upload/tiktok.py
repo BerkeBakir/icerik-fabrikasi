@@ -52,7 +52,21 @@ def zamani_tazele(zaman: datetime, simdi: datetime) -> datetime:
     return zamani_yuvarla(simdi + timedelta(minutes=16))
 
 
+def _sade(metin: str) -> str:
+    return re.sub(r"\s+", " ", metin).strip().lower()
+
+
+def aciklama_dogru_mu(editor_metni: str, aciklama: str, etiketler: list[str]) -> bool:
+    """Editördeki metin açıklamayla başlıyor ve her etiketi içeriyor mu? (araya dokunma vb. bozulmalara karşı)"""
+    metin = _sade(editor_metni)
+    if not metin.startswith(_sade(aciklama)):
+        return False
+    return all(re.search(rf"#{re.escape(e.lower())}(?!\w)", metin) for e in etiketler)
+
+
 class TikTokYukleyici:
+    ACIKLAMA_DENEME = 3
+
     def __init__(self, profil_dir: Path, hata_dir: Path, log: logging.Logger | None = None, headless: bool = False):
         self.profil_dir = Path(profil_dir)
         self.hata_dir = Path(hata_dir)
@@ -169,6 +183,19 @@ class TikTokYukleyici:
             self.log.warning("Etiket önerisi bulunamadı, düz metin kaldı: #%s", etiket)
             sayfa.keyboard.type(" ")
 
+    def _editor_metni(self, sayfa) -> str:
+        return sayfa.locator(s.ACIKLAMA_EDITOR).first.inner_text()
+
+    def _aciklama_yaz(self, sayfa, aciklama: str, etiketler: list[str]) -> None:
+        """Yazar ve geri okur; bozulduysa (ör. yazarken ekrana dokunuldu) silip baştan yazar."""
+        for deneme in range(1, self.ACIKLAMA_DENEME + 1):
+            self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
+            self._bekle(0.5, 1.0)
+            if aciklama_dogru_mu(self._editor_metni(sayfa), aciklama, etiketler):
+                return
+            self.log.warning("Açıklama bozuk yazıldı (deneme %d), baştan yazılıyor", deneme)
+        raise TikTokHatasi(f"Açıklama {self.ACIKLAMA_DENEME} denemede doğru yazılamadı")
+
     def _gorunurluk(self, sayfa, gorunurluk: str) -> None:
         metin = s.GORUNURLUK_METIN[gorunurluk]
         sayfa.locator(s.GORUNURLUK_ACICI).first.click()
@@ -261,7 +288,7 @@ class TikTokYukleyici:
                     self.log.info("Video seçiliyor: %s", Path(video).name)
                     self._dosya_sec(sayfa, Path(video))
                     self._popuplari_kapat(sayfa)
-                    self._aciklama_ve_etiketler(sayfa, aciklama, etiketler)
+                    self._aciklama_yaz(sayfa, aciklama, etiketler)
                     self._gorunurluk(sayfa, gorunurluk)
                     if zaman:
                         zaman = self._zamanla(sayfa, zaman)
