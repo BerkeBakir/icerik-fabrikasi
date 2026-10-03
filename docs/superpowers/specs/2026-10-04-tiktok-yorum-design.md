@@ -30,8 +30,9 @@ Telegram bildirimleriyle izler.
 
 ### Küfür çift kontrolü
 Gemini kararından bağımsız: yorum metni küçük bir küfür listesiyle (İngilizce + Türkçe, kelime sınırıyla)
-eşleşirse tür zorla `hakaret` olur. Üretilen cevap da aynı listeden geçer; eşleşirse cevap gönderilmez
-(yorum `hata` değil `atlandi` olur).
+eşleşirse tür zorla `hakaret` olur (Gemini çağrılmaz). Liste genel argoyu ("holy shit") değil, hakaret ve
+aşağılama kalıplarını içerir. Üretilen cevap da aynı listeden geçer; eşleşirse ya da soru/yapıcı için cevap
+boş dönerse tür `yorum`'a düşürülür (yalnız beğenilir, `yapici` kaydı yine tutulur).
 
 ### Cevap kuralları (Gemini istemi)
 - Girdi: yorum metni, yorum sahibinin kullanıcı adı, videonun açıklaması (Studio satırındaki video başlığı).
@@ -64,7 +65,7 @@ eşleşirse tür zorla `hakaret` olur. Üretilen cevap da aynı listeden geçer;
 | `core/yorum/tiktok_yorum.py` | Playwright: yorumları oku, cevapla, beğen, şikayet et (seçiciler `tiktok_secici.py`'de) |
 | `core/yorum/yonetici.py` | Akış: oku → kaydet → sınıflandır → sınırlar dahilinde eylem → bildirim/özet; `rapor()` |
 | `core/db.py` | Yeni `yorumlar` tablosu ve erişim metotları |
-| `core/ayar.py` | Kanal ayarı `yorum: {aktif, en_fazla}` |
+| `core/ayar.py` | Kanal ayarı `yorum: {aktif, en_fazla, hesap}` (`hesap`: kanalın TikTok kullanıcı adı, kendi yorumlarını atlamak ve video adresi kurmak için) |
 | `calistir.py` | `--yorumlar`, `--yorum-raporu` bayrakları |
 | `zamanla.py` | `--ek "<bayrak>"` (komuta eklenecek bayrak, görev adına da eklenir) ve `--haftalik SUN` (haftalık görev) desteği |
 
