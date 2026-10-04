@@ -65,7 +65,7 @@ YORUM_BEGEN = 'button[data-tt="components_MessageCell_Clickable"]'  # hücredeki
 YORUM_BEGENILDI = '[data-icon="HeartFill"]:visible'
 YORUM_CEVAP_METNI = "Reply"
 YORUM_CEVAP_KUTU = "textarea#comment-input"
-YORUM_CEVAP_GONDER = 'button:has-text("Post")'  # kutu yanındaki gönder düğmesi (yoksa Enter)
+YORUM_CEVAP_GONDER_METNI = "Post"  # kutu yanındaki gönder düğmesinin tam erişilebilir adı (yoksa Enter)
 ICERIK_VIDEO_LINK = 'a[href*="/video/"]'
 TIKTOK_KOK = "https://www.tiktok.com"
 # Video sayfası (tiktok.com/@hesap/video/<id>) — şikayet

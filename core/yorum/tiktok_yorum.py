@@ -14,15 +14,19 @@ from core.upload.tiktok import TikTokHatasi, TikTokYukleyici
 from core.yorum import HamYorum, YorumIslemHatasi
 
 AZAMI_YAS_GUN = 7
-_BIRIM = {"m": 1 / 1440, "h": 1 / 24, "d": 1.0, "w": 7.0}
+_BIRIM = {"m": 1 / 1440, "min": 1 / 1440, "mins": 1 / 1440, "minute": 1 / 1440, "minutes": 1 / 1440,
+          "h": 1 / 24, "hr": 1 / 24, "hrs": 1 / 24, "hour": 1 / 24, "hours": 1 / 24,
+          "d": 1.0, "day": 1.0, "days": 1.0,
+          "w": 7.0, "wk": 7.0, "wks": 7.0, "week": 7.0, "weeks": 7.0}
+_YAS_RE = re.compile(r"(\d+)\s*(" + "|".join(sorted(_BIRIM, key=len, reverse=True)) + r")\s+ago")
 
 
 def yas_gun(metin: str) -> float | None:
-    """'2h ago' → 0.083; 'Just now' → 0; tarih ('10-01') ya da bilinmeyen → None (eski sayılır)."""
+    """'2h ago' → 0.083; 'Just now' → 0; tarih ('10-01'), ay/yıl ('3mo ago') ya da bilinmeyen → None (eski sayılır)."""
     m = (metin or "").strip().lower()
     if m in ("just now", "now"):
         return 0.0
-    r = re.fullmatch(r"(\d+)\s*([mhdw])\w*\s+ago", m)
+    r = _YAS_RE.fullmatch(m)
     return int(r.group(1)) * _BIRIM[r.group(2)] if r else None
 
 
@@ -56,11 +60,17 @@ class TikTokYorumcu(TikTokYukleyici):
             except TikTokHatasi as e:
                 raise YorumIslemHatasi(str(e)) from e
             try:
-                sayfa.goto(s.YORUM_URL)
-                time.sleep(random.uniform(4, 6))
-                if s.GIRIS_YOLU in sayfa.url:
-                    raise YorumIslemHatasi("TikTok oturumu kapalı", yetki=True)
-                self._popuplari_kapat(sayfa)
+                try:
+                    sayfa.goto(s.YORUM_URL)
+                    time.sleep(random.uniform(4, 6))
+                    if s.GIRIS_YOLU in sayfa.url:
+                        raise YorumIslemHatasi("TikTok oturumu kapalı", yetki=True)
+                    self._popuplari_kapat(sayfa)
+                except YorumIslemHatasi:
+                    raise
+                except Exception as e:
+                    raise YorumIslemHatasi(f"Yorum sayfası açılamadı: {e}",
+                                           ekran=self._ekran_kaydet(sayfa, "yorum_acilis")) from e
                 yield YorumSayfasi(self, ctx, sayfa)
             finally:
                 self._tarayici_kapat(ctx)
@@ -88,11 +98,22 @@ class YorumSayfasi:
     # --- okuma ---
     def oku(self, en_fazla: int = 100) -> list[HamYorum]:
         hucreler = self.sayfa.locator(s.YORUM_HUCRE)
-        self.y._gorunurse(hucreler.first, 10_000)
+        try:
+            gorunur = self.y._gorunurse(hucreler.first, 10_000)
+            adet = hucreler.count() if gorunur else 0
+        except Exception as e:
+            raise self._hata(f"Yorumlar okunamadı: {e}", "yorum_oku") from e
+        if not gorunur:
+            self.y.log.warning("Yorum hücresi 10 sn içinde görünmedi; boş okuma")
+            self.y._ekran_kaydet(self.sayfa, "yorum_bos")
+            return []
         sonuc: list[HamYorum] = []
-        for i in range(min(hucreler.count(), en_fazla)):
+        for i in range(min(adet, en_fazla)):
             h = hucreler.nth(i)
             try:
+                if not h.inner_text(timeout=2000).strip():
+                    self.y.log.debug("Boş yorum hücresi atlandı (%d)", i)
+                    continue
                 yas = yas_gun(h.locator(s.YORUM_ZAMAN).first.inner_text(timeout=2000))
                 if yas is None or yas > AZAMI_YAS_GUN:
                     continue
@@ -116,7 +137,7 @@ class YorumSayfasi:
             kutu.click()
             self.y._yaz(self.sayfa, metin)
             time.sleep(random.uniform(0.5, 1.2))
-            gonder = self.sayfa.locator(s.YORUM_CEVAP_GONDER).first
+            gonder = self.sayfa.get_by_role("button", name=s.YORUM_CEVAP_GONDER_METNI, exact=True).first
             if self.y._gorunurse(gonder, 1000):
                 gonder.click()
             else:
@@ -140,22 +161,37 @@ class YorumSayfasi:
             raise self._hata(f"Beğenilemedi (@{y.kullanici}): {e}", "yorum_begen") from e
 
     def _video_yolu(self, video: str) -> str | None:
-        if self._video_satirlari is None:
-            self.sayfa.goto(s.ICERIK_URL)
-            time.sleep(random.uniform(4, 6))
-            linkler = self.sayfa.locator(s.ICERIK_VIDEO_LINK)
-            satirlar = []
-            for i in range(linkler.count()):
-                a = linkler.nth(i)
-                href = a.get_attribute("href") or ""
-                if self.y.hesap and f"/@{self.y.hesap}/video/" not in href:
-                    continue
-                satirlar.append((href, a.inner_text(timeout=2000)))
-            self._video_satirlari = satirlar
+        """İçerik listesine ayrı sekmede bakar; yorum sayfası (self.sayfa) yerinde kalır."""
+        if not self._video_satirlari:
+            sekme = self.ctx.new_page()
+            try:
+                sekme.goto(s.ICERIK_URL)
+                time.sleep(random.uniform(4, 6))
+                linkler = sekme.locator(s.ICERIK_VIDEO_LINK)
+                satirlar = []
+                for i in range(linkler.count()):
+                    a = linkler.nth(i)
+                    href = a.get_attribute("href") or ""
+                    if self.y.hesap and f"/@{self.y.hesap}/video/" not in href:
+                        continue
+                    satirlar.append((href, a.inner_text(timeout=2000)))
+            except Exception as e:
+                raise YorumIslemHatasi(f"İçerik listesi okunamadı: {e}",
+                                       ekran=self.y._ekran_kaydet(sekme, "sikayet_icerik")) from e
+            finally:
+                sekme.close()
+            if satirlar:
+                self._video_satirlari = satirlar
+            return video_yolu_bul(satirlar, video)
         return video_yolu_bul(self._video_satirlari, video)
 
     def sikayet_et(self, y: HamYorum, tur: str) -> None:
-        yol = self._video_yolu(y.video)
+        try:
+            yol = self._video_yolu(y.video)
+        except YorumIslemHatasi:
+            raise
+        except Exception as e:
+            raise self._hata(f"İçerik listesi açılamadı: {e}", "sikayet_icerik") from e
         if not yol:
             raise self._hata(f"Yorumun videosu bulunamadı: {y.video[:40]}", "sikayet_video")
         vs = self.ctx.new_page()
