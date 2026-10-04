@@ -24,6 +24,20 @@ ffmpeg/ffprobe PATH'te olmalı. Eski repolardan taşıma: `.venv/Scripts/python.
 - Hikâye sesi, toplam anlatım süresi `hedef_sure_dk`'ya en yakın olacak sayıda (en çok `tekrar`) tekrarlanır; hikâye kısaltılmaz. Video son tekrardan yaklaşık 10 sn sonra (yalnızca yağmur sesiyle) biter, başlıktaki süre gerçek uzunluktan türetilir.
 - 1080p'den büyük (ör. 4K) arka plan videosu bir kez `<ad>_1080p.mp4` olarak aynı klasöre dönüştürülür ve sonraki çalıştırmalarda yeniden kullanılır.
 
+## TikTok yorumları
+Kanal dosyasında `yorum: {aktif: true, en_fazla: 10, hesap: <tiktok_kullanici_adi>}`.
+- Soru → cevap, yapıcı öneri → kayıt + cevap, sıradan yorum → beğeni, hakaret/spam → şikayet.
+- Ağır hakaretler doğrudan şikayet edilir; hafif küfür ("bitch" vb.) yalnız Gemini de hakaret derse şikayet edilir, yoksa yoruma dokunulmaz.
+- Çalıştırma başına en çok `en_fazla` cevap, 5 şikayet, 30 beğeni; eylemler arasında rastgele bekleme. Gönderilip doğrulanamayan eylem `belirsiz` olur ve tekrar denenmez.
+- Her cevap/şikayet Telegram'a bildirilir; pazar günleri yapıcı yorum raporu gelir.
+```bash
+.venv/Scripts/python.exe calistir.py tiktok_hikaye1 --yorumlar --kuru   # sadece oku ve sınıflandır
+.venv/Scripts/python.exe calistir.py tiktok_hikaye1 --yorumlar          # gerçek çalıştırma
+.venv/Scripts/python.exe calistir.py tiktok_hikaye1 --yorum-raporu      # haftalık rapor
+.venv/Scripts/python.exe zamanla.py tiktok_hikaye1 --saat 10:00 --saat 14:00 --saat 17:00 --saat 23:00 --ek=--yorumlar
+.venv/Scripts/python.exe zamanla.py tiktok_hikaye1 --saat 12:00 --ek=--yorum-raporu --haftalik SUN
+```
+
 ## Yeni hesap / kanal
 `kanallar/` altına yeni bir yaml koy (örnek: `ornek_tiktok_korku.yaml`), `--giris` ile oturum aç, `zamanla.py` ile saat ver.
 
