@@ -51,3 +51,28 @@ def etiket_oneri_deseni(etiket: str) -> re.Pattern:
 
 def tam_metin_deseni(metin: str) -> re.Pattern:
     return re.compile(rf"^{re.escape(metin)}$")
+
+
+# --- Yorumlar (TikTok Studio /tiktokstudio/comment) ---
+YORUM_URL = "https://www.tiktok.com/tiktokstudio/comment?lang=en"
+ICERIK_URL = "https://www.tiktok.com/tiktokstudio/content?lang=en"
+YORUM_HUCRE = 'div[data-tt="components_CommentCell_FlexColumn"]'
+YORUM_KULLANICI = 'a[data-tt="components_MessageCell_a"]'
+YORUM_METIN = 'span[data-tt="components_TUXTextWithMention_TUXText"]'
+YORUM_ZAMAN = 'span[data-tt="components_MessageCell_span_20"]'
+YORUM_VIDEO = '[data-tt="components_MessageCell_TUXText"]'  # hücredeki SONUNCUSU video başlığı
+YORUM_BEGEN = 'button[data-tt="components_MessageCell_Clickable"]'  # hücredeki İLKİ kalp
+YORUM_BEGENILDI = '[data-icon="HeartFill"]:visible'
+YORUM_CEVAP_METNI = "Reply"
+YORUM_CEVAP_KUTU = "textarea#comment-input"
+YORUM_CEVAP_GONDER = 'button:has-text("Post")'  # kutu yanındaki gönder düğmesi (yoksa Enter)
+ICERIK_VIDEO_LINK = 'a[href*="/video/"]'
+TIKTOK_KOK = "https://www.tiktok.com"
+# Video sayfası (tiktok.com/@hesap/video/<id>) — şikayet
+VIDEO_YORUM_OGE = '[data-e2e="comment-level-1"]'
+VIDEO_YORUM_MENU = '[data-e2e="comment-more-icon"], [aria-label*="more" i]'
+VIDEO_SIKAYET_METNI = "Report"
+VIDEO_SIKAYET_SEBEP = {"hakaret": ["Harassment or bullying", "Hate and harassment", "Hate speech"],
+                       "spam": ["Spam", "Frauds and scams"]}
+VIDEO_SIKAYET_GONDER = 'button:has-text("Submit")'
+VIDEO_SIKAYET_TAMAM = ['text=/thanks for reporting/i', 'text=/report submitted/i', 'button:has-text("Done")']
