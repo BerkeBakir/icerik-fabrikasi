@@ -105,8 +105,16 @@ def _yorumlar(kanal, log, kuru: bool) -> int:
         return 0
     except YorumIslemHatasi as e:
         log.error("Yorum işleme hatası: %s", e)
-        if e.yetki and not kuru:
+        if kuru:
+            return 1
+        if e.yetki:
             bildirim.mesaj(f"🚨 [{kanal.ad}] TikTok oturumu kapalı: 'calistir.py {kanal.ad} --giris' çalıştır")
+        elif not getattr(e, "bildirildi", False):
+            mesaj = f"🚨 [{kanal.ad}] Yorum işleme hatası: {e}"
+            if e.ekran:
+                bildirim.foto(e.ekran, mesaj)
+            else:
+                bildirim.mesaj(mesaj)
         return 1
     except Exception as e:
         log.exception("Yorum işleme beklenmeyen hata")

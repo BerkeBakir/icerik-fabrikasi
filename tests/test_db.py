@@ -103,6 +103,15 @@ def test_yorum_hata_ikincide_atlanir(tmp_path):
     assert db.yorum_hata(kim, "yine yok").durum == "atlandi"
 
 
+def test_yorum_belirsiz_tekrar_islenmez(tmp_path):
+    db = DB(tmp_path / "f.db")
+    kim = yorum_kimligi("k1", "a", "b", "c")
+    db.yorum_ekle(kim, "k1", "a", "b", "c")
+    y = db.yorum_belirsiz(kim, "onay görülmedi")
+    assert y.durum == "belirsiz" and y.hata == "onay görülmedi"
+    assert db.yorum_islenecekler("k1") == []
+
+
 def test_yapici_yorumlar_tarihe_gore(tmp_path):
     db = DB(tmp_path / "f.db")
     for i, tur in enumerate(["yapici", "soru", "yapici"]):

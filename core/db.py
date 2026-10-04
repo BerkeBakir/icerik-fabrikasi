@@ -179,6 +179,13 @@ class DB:
         self.bag.commit()
         return self.yorum_getir(kimlik)
 
+    def yorum_belirsiz(self, kimlik: str, mesaj: str) -> Yorum:
+        """Eylem gönderildi ama doğrulanamadı: tekrar denenmez (çift cevap/şikayet olmasın)."""
+        self.bag.execute("UPDATE yorumlar SET durum='belirsiz', hata=?, guncelleme=? WHERE kimlik=?",
+                         (mesaj[:2000], _simdi(), kimlik))
+        self.bag.commit()
+        return self.yorum_getir(kimlik)
+
     def yorum_islenecekler(self, kanal: str) -> list[Yorum]:
         satirlar = self.bag.execute(
             f"SELECT * FROM yorumlar WHERE kanal=? AND durum IN ({','.join('?' * len(YORUM_ISLENECEK))}) "

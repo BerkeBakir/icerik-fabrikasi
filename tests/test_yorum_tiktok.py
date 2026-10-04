@@ -1,6 +1,14 @@
-import pytest
+import logging
+import re
+from pathlib import Path
 
-from core.yorum.tiktok_yorum import video_yolu_bul, yas_gun
+import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+from core.upload import tiktok_secici as s
+from core.yorum import HamYorum, YorumIslemHatasi
+from core.yorum import tiktok_yorum as ty
+from core.yorum.tiktok_yorum import YorumSayfasi, video_yolu_bul, yas_gun
 
 
 @pytest.mark.parametrize("metin,gun", [("2h ago", 2 / 24), ("35m ago", 35 / 1440), ("3d ago", 3.0),
@@ -34,14 +42,6 @@ def test_yas_gun_ay_yil_bilinmez(metin):
 
 
 # --- Playwright sahteleri ---
-import logging
-from pathlib import Path
-
-from playwright.sync_api import TimeoutError as PlaywrightTimeout
-
-from core.yorum import YorumIslemHatasi
-from core.yorum.tiktok_yorum import YorumSayfasi
-
 
 class _Konum:
     def __init__(self, metinler=None, hata=None):
@@ -183,7 +183,276 @@ def test_sikayet_video_yolu_hatasi_yorum_islem_hatasi(monkeypatch):
     sekme = _IcerikSayfasi(hata=PlaywrightTimeout("zaman asimi"))
     y = _Yorumcu()
     ys = YorumSayfasi(y, _Ctx(sekme), _Sayfa([]))
-    from core.yorum import HamYorum
     with pytest.raises(YorumIslemHatasi):
         ys.sikayet_et(HamYorum("u", "metin", "bir video basligi uzun"), "spam")
     assert sekme.kapandi
+
+
+class _BozukKonum(_Konum):
+    def inner_text(self, timeout=0):
+        raise RuntimeError("arayüz değişti")
+
+
+class _BozukHucre(_Hucre):
+    def locator(self, sel):
+        return _BozukKonum(["?"])
+
+
+def test_oku_tum_dolu_satirlar_bozuksa_hata():
+    y = _Yorumcu()
+    ys = YorumSayfasi(y, None, _Sayfa([_BozukHucre("dolu"), _Hucre("  "), _BozukHucre("dolu")]))
+    with pytest.raises(YorumIslemHatasi, match="arayüz değişmiş") as e:
+        ys.oku()
+    assert e.value.ekran is not None
+
+
+def test_oku_bazi_satirlar_bozuksa_okunanlar_doner():
+    ys = YorumSayfasi(_Yorumcu(), None, _Sayfa([_BozukHucre("dolu"), _Hucre("dolu")]))
+    assert len(ys.oku()) == 1
+
+
+# --- eylem sahteleri (kayıt tutan konum/sayfa) ---
+class _L:
+    """Sahte Playwright konumu: filtreleri kaydeder, tıklamaları ortak kayda yazar."""
+
+    def __init__(self, ad, kayit, adet=1, degerler=("",), gorunur=None, tik_hata=None, cocuklar=None):
+        self.ad, self.kayit, self.adet = ad, kayit, adet
+        self.degerler = list(degerler)
+        self.gorunur = (adet != 0) if gorunur is None else gorunur
+        self.tik_hata = tik_hata
+        self.cocuklar = cocuklar or {}
+        self.filtreler = []
+
+    first = property(lambda self: self)
+    last = property(lambda self: self)
+
+    def nth(self, i):
+        return self
+
+    def filter(self, **kw):
+        self.filtreler.append(kw)
+        return self
+
+    def count(self):
+        if isinstance(self.adet, Exception):
+            raise self.adet
+        return self.adet
+
+    def _cocuk(self, anahtar):
+        if anahtar not in self.cocuklar:
+            self.cocuklar[anahtar] = _L(anahtar, self.kayit)
+        return self.cocuklar[anahtar]
+
+    def locator(self, sel):
+        return self._cocuk(sel)
+
+    def get_by_text(self, metin, exact=False):
+        return self._cocuk(metin)
+
+    def click(self):
+        self.kayit.append(("tik", self.ad))
+        if self.tik_hata:
+            raise self.tik_hata
+
+    def hover(self):
+        pass
+
+    def wait_for(self, state="visible", timeout=0):
+        pass
+
+    def input_value(self, timeout=0):
+        return self.degerler.pop(0) if len(self.degerler) > 1 else self.degerler[0]
+
+
+class _Klavye:
+    def __init__(self, kayit):
+        self.kayit = kayit
+
+    def press(self, tus):
+        self.kayit.append(("tus", tus))
+
+
+class _ESayfa:
+    def __init__(self, kayit, konumlar=None, goto_hata=None):
+        self.kayit = kayit
+        self.konumlar = konumlar or {}
+        self.goto_cagrilari = []
+        self.goto_hata = goto_hata
+        self.keyboard = _Klavye(kayit)
+        self.kapandi = False
+
+    def locator(self, sel):
+        if sel not in self.konumlar:
+            self.konumlar[sel] = _L(sel, self.kayit)
+        return self.konumlar[sel]
+
+    def get_by_text(self, metin, exact=False):
+        return self.locator(metin)
+
+    def get_by_role(self, rol, name=None, exact=False):
+        return self.locator(name)
+
+    def goto(self, url):
+        self.goto_cagrilari.append(url)
+        if self.goto_hata and url == s.YORUM_URL:
+            raise self.goto_hata
+
+    def close(self):
+        self.kapandi = True
+
+
+class _EYorumcu(_Yorumcu):
+    def __init__(self, kayit):
+        super().__init__()
+        self.kayit = kayit
+
+    def _gorunurse(self, loc, ms):
+        return loc.gorunur
+
+    def _yaz(self, sayfa, metin):
+        self.kayit.append(("yaz", metin))
+
+    def _popuplari_kapat(self, sayfa):
+        self.kayit.append(("popup", None))
+
+
+@pytest.fixture
+def uykusuz(monkeypatch):
+    monkeypatch.setattr("core.yorum.tiktok_yorum.time.sleep", lambda sn: None)
+    monkeypatch.setattr(ty, "CEVAP_BOSALMA_SN", 0)
+
+
+def _kur(konumlar=None, goto_hata=None):
+    kayit = []
+    sayfa = _ESayfa(kayit, {k: v(kayit) for k, v in (konumlar or {}).items()}, goto_hata)
+    return YorumSayfasi(_EYorumcu(kayit), None, sayfa), sayfa, kayit
+
+
+YH = HamYorum("ali", "Is this real?", "bir video basligi uzun")
+
+
+def test_hucre_birden_fazla_eslesme_hata(uykusuz):
+    ys, _, _ = _kur({s.YORUM_HUCRE: lambda k: _L("hucre", k, adet=2)})
+    with pytest.raises(YorumIslemHatasi, match="tek değil"):
+        ys._hucre(YH)
+
+
+def test_hucre_count_hatasi_sarilir(uykusuz):
+    ys, _, _ = _kur({s.YORUM_HUCRE: lambda k: _L("hucre", k, adet=RuntimeError("koptu"))})
+    with pytest.raises(YorumIslemHatasi) as e:
+        ys._hucre(YH)
+    assert e.value.ekran is not None
+
+
+def test_hucre_tam_metin_bosluk_toleransli(uykusuz):
+    ys, sayfa, _ = _kur()
+    ys._hucre(YH)
+    desen = sayfa.konumlar[s.YORUM_METIN].filtreler[-1]["has_text"]
+    assert desen.search("  Is this\n real? ")
+    assert not desen.search("Is this real? yes") and not desen.search("is this real?")
+    assert not desen.search("Oh Is this real?")
+
+
+def test_cevap_kutusu_dolu_ise_yazmaz_ve_sayfayi_sifirlar(uykusuz):
+    ys, sayfa, kayit = _kur({s.YORUM_CEVAP_KUTU: lambda k: _L("kutu", k, degerler=("eski taslak",))})
+    with pytest.raises(YorumIslemHatasi) as e:
+        ys.cevapla(YH, "Thanks!")
+    assert not e.value.gonderildi
+    assert not [x for x in kayit if x[0] in ("yaz", "tus")] and ("tik", "Post") not in kayit
+    assert sayfa.goto_cagrilari == [s.YORUM_URL] and ("popup", None) in kayit
+
+
+def test_cevap_kutusu_tek_degilse_yazmaz(uykusuz):
+    ys, sayfa, kayit = _kur({s.YORUM_CEVAP_KUTU: lambda k: _L("kutu", k, adet=2)})
+    with pytest.raises(YorumIslemHatasi, match="tek değil") as e:
+        ys.cevapla(YH, "Thanks!")
+    assert not e.value.gonderildi and not [x for x in kayit if x[0] == "yaz"]
+    assert sayfa.goto_cagrilari == [s.YORUM_URL]
+
+
+def test_cevap_gonderildikten_sonra_hata_gonderildi_isaretli(uykusuz):
+    ys, sayfa, kayit = _kur({s.YORUM_CEVAP_KUTU: lambda k: _L("kutu", k, degerler=("", "Thanks!"))})
+    with pytest.raises(YorumIslemHatasi) as e:
+        ys.cevapla(YH, "Thanks!")
+    assert e.value.gonderildi
+    assert ("yaz", "Thanks!") in kayit and ("tik", "Post") in kayit
+    assert sayfa.goto_cagrilari == [s.YORUM_URL]
+
+
+def test_cevap_basarili(uykusuz):
+    ys, sayfa, kayit = _kur()
+    ys.cevapla(YH, "Thanks!")
+    assert ("yaz", "Thanks!") in kayit and ("tik", "Post") in kayit and sayfa.goto_cagrilari == []
+
+
+def test_begen_hatasi_sayfayi_sifirlar(uykusuz):
+    ys, sayfa, kayit = _kur()
+    sayfa.konumlar[s.YORUM_HUCRE] = _L("hucre", kayit, cocuklar={
+        s.YORUM_BEGENILDI: _L("begenildi", kayit, adet=0),
+        s.YORUM_BEGEN: _L("begen", kayit, tik_hata=RuntimeError("tıklanamadı"))})
+    with pytest.raises(YorumIslemHatasi, match="Beğenilemedi"):
+        ys.begen(YH)
+    assert sayfa.goto_cagrilari == [s.YORUM_URL]
+
+
+def test_sifirlama_hatasi_asil_hatayi_ortmez(uykusuz):
+    ys, sayfa, _ = _kur({s.YORUM_HUCRE: lambda k: _L("hucre", k, adet=0)}, goto_hata=RuntimeError("ağ yok"))
+    with pytest.raises(YorumIslemHatasi, match="bulunamadı"):
+        ys.cevapla(YH, "Thanks!")
+    assert sayfa.goto_cagrilari == [s.YORUM_URL]
+
+
+class _ECtx:
+    def __init__(self, sayfa):
+        self.sayfa = sayfa
+
+    def new_page(self):
+        return self.sayfa
+
+
+def _sikayet_kur(konumlar=None):
+    kayit = []
+    ana = _ESayfa(kayit)
+    vs = _ESayfa(kayit, {k: v(kayit) for k, v in (konumlar or {}).items()})
+    ys = YorumSayfasi(_EYorumcu(kayit), _ECtx(vs), ana)
+    ys._video_satirlari = [("/@slumberlab/video/1", "bir video basligi uzun ve devami")]
+    return ys, vs, kayit
+
+
+@pytest.mark.parametrize("adet", [0, 2])
+def test_sikayet_hedef_tek_degilse_tiklamaz(uykusuz, adet):
+    ys, vs, kayit = _sikayet_kur({s.VIDEO_YORUM_OGE: lambda k: _L("oge", k, adet=adet)})
+    with pytest.raises(YorumIslemHatasi, match="Şikayet hedefi") as e:
+        ys.sikayet_et(YH, "spam")
+    assert not [x for x in kayit if x[0] == "tik"]
+    assert e.value.ekran is not None and not e.value.gonderildi and vs.kapandi
+
+
+def test_sikayet_hedef_yazar_ve_tam_metinle_daraltilir(uykusuz):
+    ys, vs, kayit = _sikayet_kur()
+    ys.sikayet_et(YH, "spam")
+    sahipler = [f["has"] for f in vs.konumlar[s.VIDEO_YORUM_OGE].filtreler]
+    assert vs.konumlar[s.VIDEO_YORUM_YAZAR.format(kullanici="ali")] in sahipler
+    metin = vs.konumlar[s.VIDEO_YORUM_METIN]
+    assert metin in sahipler
+    desen = metin.filtreler[-1]["has_text"]
+    assert isinstance(desen, re.Pattern) and desen.search(" Is this real? ") and not desen.search("Is this real?!")
+    assert {"visible": True} in vs.konumlar[s.VIDEO_SIKAYET_MENU].filtreler
+    assert ("tik", "Report") in kayit and ("tik", s.VIDEO_SIKAYET_GONDER) in kayit
+
+
+def test_sikayet_menude_report_yoksa_tiklamaz(uykusuz):
+    def menu(k):
+        return _L("menu", k, cocuklar={s.VIDEO_SIKAYET_METNI: _L("Report", k, gorunur=False)})
+    ys, vs, kayit = _sikayet_kur({s.VIDEO_SIKAYET_MENU: menu})
+    with pytest.raises(YorumIslemHatasi) as e:
+        ys.sikayet_et(YH, "spam")
+    assert ("tik", "Report") not in kayit and not e.value.gonderildi
+    assert ("tik", s.VIDEO_SIKAYET_GONDER) not in kayit
+
+
+def test_sikayet_gonderildikten_sonra_onay_yoksa_gonderildi(uykusuz):
+    ys, vs, kayit = _sikayet_kur({x: (lambda k, x=x: _L(x, k, gorunur=False)) for x in s.VIDEO_SIKAYET_TAMAM})
+    with pytest.raises(YorumIslemHatasi) as e:
+        ys.sikayet_et(YH, "spam")
+    assert e.value.gonderildi and ("tik", s.VIDEO_SIKAYET_GONDER) in kayit

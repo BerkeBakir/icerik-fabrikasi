@@ -14,9 +14,11 @@ class HamYorum:
 
 
 class YorumIslemHatasi(Exception):
-    """Tarayıcı eylemi başarısız. yetki=True: oturum kapalı ('--giris' gerekli)."""
+    """Tarayıcı eylemi başarısız. yetki=True: oturum kapalı ('--giris' gerekli).
+    gonderildi=True: hata gönder/submit tıklamasından SONRA oldu; eylem gerçekleşmiş olabilir, tekrar denenmez."""
 
-    def __init__(self, mesaj: str, ekran: Path | None = None, yetki: bool = False):
+    def __init__(self, mesaj: str, ekran: Path | None = None, yetki: bool = False, gonderildi: bool = False):
         super().__init__(mesaj)
         self.ekran = ekran
         self.yetki = yetki
+        self.gonderildi = gonderildi

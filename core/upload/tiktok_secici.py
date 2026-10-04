@@ -69,8 +69,12 @@ YORUM_CEVAP_GONDER_METNI = "Post"  # kutu yanındaki gönder düğmesinin tam er
 ICERIK_VIDEO_LINK = 'a[href*="/video/"]'
 TIKTOK_KOK = "https://www.tiktok.com"
 # Video sayfası (tiktok.com/@hesap/video/<id>) — şikayet
-VIDEO_YORUM_OGE = '[data-e2e="comment-level-1"]'
+# Tek yorum kabı (yazar linki + metin + "..." menüsü içinde); hedef yazar VE tam metinle daraltılır, tek olmalı
+VIDEO_YORUM_OGE = 'div[class*="DivCommentItemContainer"]'
+VIDEO_YORUM_YAZAR = 'a[href="/@{kullanici}"]'  # .format(kullanici=...)
+VIDEO_YORUM_METIN = '[data-e2e="comment-level-1"]'  # tam metin, çapalı regex ile eşlenir
 VIDEO_YORUM_MENU = '[data-e2e="comment-more-icon"], [aria-label*="more" i]'
+VIDEO_SIKAYET_MENU = '[role="menu"], [data-e2e*="comment-menu"], div[class*="popover" i]'  # görünen SONUNCUSU
 VIDEO_SIKAYET_METNI = "Report"
 VIDEO_SIKAYET_SEBEP = {"hakaret": ["Harassment or bullying", "Hate and harassment", "Hate speech"],
                        "spam": ["Spam", "Frauds and scams"]}

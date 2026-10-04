@@ -14,6 +14,7 @@ from core.upload.tiktok import TikTokHatasi, TikTokYukleyici
 from core.yorum import HamYorum, YorumIslemHatasi
 
 AZAMI_YAS_GUN = 7
+CEVAP_BOSALMA_SN = 10  # gönderimden sonra cevap kutusunun boşalması için azami bekleme
 _BIRIM = {"m": 1 / 1440, "min": 1 / 1440, "mins": 1 / 1440, "minute": 1 / 1440, "minutes": 1 / 1440,
           "h": 1 / 24, "hr": 1 / 24, "hrs": 1 / 24, "hour": 1 / 24, "hours": 1 / 24,
           "d": 1.0, "day": 1.0, "days": 1.0,
@@ -28,6 +29,11 @@ def yas_gun(metin: str) -> float | None:
         return 0.0
     r = _YAS_RE.fullmatch(m)
     return int(r.group(1)) * _BIRIM[r.group(2)] if r else None
+
+
+def tam_desen(metin: str) -> re.Pattern:
+    """Tam metin eşlemesi: çapalı, büyük/küçük harf duyarlı, boşluk farklarına toleranslı."""
+    return re.compile(r"^\s*" + r"\s+".join(map(re.escape, metin.split())) + r"\s*$")
 
 
 def _govde(metin: str) -> str:
@@ -84,15 +90,31 @@ class YorumSayfasi:
         self._video_satirlari: list[tuple[str, str]] | None = None
 
     # --- yardımcılar ---
-    def _hata(self, mesaj: str, ad: str) -> YorumIslemHatasi:
-        return YorumIslemHatasi(mesaj, ekran=self.y._ekran_kaydet(self.sayfa, ad))
+    def _hata(self, mesaj: str, ad: str, gonderildi: bool = False) -> YorumIslemHatasi:
+        return YorumIslemHatasi(mesaj, ekran=self.y._ekran_kaydet(self.sayfa, ad), gonderildi=gonderildi)
+
+    def _sifirla(self) -> None:
+        """Başarısız eylemden sonra yarım kalmış cevap kutusu/menü bir sonrakine sızmasın.
+        Kendi hatası asıl hatayı örtmez (yalnız loglanır)."""
+        try:
+            self.sayfa.goto(s.YORUM_URL)
+            time.sleep(random.uniform(3, 5))
+            self.y._popuplari_kapat(self.sayfa)
+        except Exception as e:
+            self.y.log.warning("Yorum sayfası sıfırlanamadı: %s", e)
 
     def _hucre(self, y: HamYorum):
-        hucreler = self.sayfa.locator(s.YORUM_HUCRE).filter(
-            has=self.sayfa.locator(s.YORUM_KULLANICI).filter(has_text=re.compile(rf"^\s*{re.escape(y.kullanici)}\s*$"))
-        ).filter(has=self.sayfa.locator(s.YORUM_METIN).filter(has_text=y.metin[:60]))
-        if not hucreler.count():
+        try:
+            hucreler = self.sayfa.locator(s.YORUM_HUCRE).filter(
+                has=self.sayfa.locator(s.YORUM_KULLANICI).filter(has_text=tam_desen(y.kullanici))
+            ).filter(has=self.sayfa.locator(s.YORUM_METIN).filter(has_text=tam_desen(y.metin)))
+            adet = hucreler.count()
+        except Exception as e:
+            raise self._hata(f"Yorum aranamadı (@{y.kullanici}): {e}", "yorum_ara") from e
+        if adet == 0:
             raise self._hata(f"Yorum sayfada bulunamadı: @{y.kullanici}", "yorum_yok")
+        if adet > 1:
+            raise self._hata(f"Yorum tek değil ({adet} eşleşme): @{y.kullanici}", "yorum_coklu")
         return hucreler.first
 
     # --- okuma ---
@@ -108,6 +130,7 @@ class YorumSayfasi:
             self.y._ekran_kaydet(self.sayfa, "yorum_bos")
             return []
         sonuc: list[HamYorum] = []
+        okunan = bozuk = 0
         for i in range(min(adet, en_fazla)):
             h = hucreler.nth(i)
             try:
@@ -116,24 +139,47 @@ class YorumSayfasi:
                     continue
                 yas = yas_gun(h.locator(s.YORUM_ZAMAN).first.inner_text(timeout=2000))
                 if yas is None or yas > AZAMI_YAS_GUN:
+                    okunan += 1
                     continue
                 kullanici = h.locator(s.YORUM_KULLANICI).first.inner_text(timeout=2000).strip().lstrip("@")
                 metin = h.locator(s.YORUM_METIN).first.inner_text(timeout=2000).strip()
                 video = h.locator(s.YORUM_VIDEO).last.inner_text(timeout=2000).strip()
             except Exception as e:
+                bozuk += 1
                 self.y.log.warning("Yorum satırı okunamadı (%d): %s", i, e)
                 continue
+            okunan += 1
             if kullanici and metin:
                 sonuc.append(HamYorum(kullanici, metin, video))
+        if bozuk and not okunan:  # hücre var ama hiçbiri ayrıştırılamadı: "yorum yok" sanılmasın
+            raise self._hata("Yorum satırları okunamadı (arayüz değişmiş olabilir)", "yorum_satir")
         return sonuc
 
     # --- eylemler ---
     def cevapla(self, y: HamYorum, metin: str) -> None:
+        try:
+            self._cevapla(y, metin)
+        except Exception:
+            self._sifirla()
+            raise
+
+    @staticmethod
+    def _bosaldi(kutular) -> bool:
+        return kutular.count() == 0 or kutular.first.input_value(timeout=1000) == ""
+
+    def _cevapla(self, y: HamYorum, metin: str) -> None:
         hucre = self._hucre(y)
+        gonderildi = False
         try:
             hucre.get_by_text(s.YORUM_CEVAP_METNI, exact=True).first.click()
-            kutu = self.sayfa.locator(s.YORUM_CEVAP_KUTU).first
-            kutu.wait_for(state="visible", timeout=5000)
+            kutular = self.sayfa.locator(s.YORUM_CEVAP_KUTU).filter(visible=True)
+            kutular.first.wait_for(state="visible", timeout=5000)
+            adet = kutular.count()
+            if adet != 1:
+                raise self._hata(f"Cevap kutusu tek değil ({adet}): @{y.kullanici}", "yorum_cevap_kutu")
+            kutu = kutular.first
+            if kutu.input_value(timeout=2000) != "":
+                raise self._hata(f"Cevap kutusu boş değil (bayat taslak): @{y.kullanici}", "yorum_cevap_kutu")
             kutu.click()
             self.y._yaz(self.sayfa, metin)
             time.sleep(random.uniform(0.5, 1.2))
@@ -142,23 +188,30 @@ class YorumSayfasi:
                 gonder.click()
             else:
                 self.sayfa.keyboard.press("Enter")
-            self.sayfa.wait_for_function(
-                "s => { const k = document.querySelector(s); return !k || k.value === ''; }",
-                arg=s.YORUM_CEVAP_KUTU, timeout=10_000)
+            gonderildi = True
+            son = time.monotonic() + CEVAP_BOSALMA_SN
+            while not self._bosaldi(kutular):
+                if time.monotonic() >= son:
+                    raise RuntimeError(f"cevap kutusu {CEVAP_BOSALMA_SN} sn içinde boşalmadı")
+                time.sleep(0.3)
         except YorumIslemHatasi:
             raise
         except Exception as e:
-            raise self._hata(f"Cevap gönderilemedi (@{y.kullanici}): {e}", "yorum_cevap") from e
+            raise self._hata(f"Cevap gönderilemedi (@{y.kullanici}): {e}", "yorum_cevap", gonderildi) from e
 
     def begen(self, y: HamYorum) -> None:
-        hucre = self._hucre(y)
         try:
-            if hucre.locator(s.YORUM_BEGENILDI).count():
-                return
-            hucre.locator(s.YORUM_BEGEN).first.click()
-            hucre.locator(s.YORUM_BEGENILDI).first.wait_for(state="attached", timeout=5000)
-        except Exception as e:
-            raise self._hata(f"Beğenilemedi (@{y.kullanici}): {e}", "yorum_begen") from e
+            hucre = self._hucre(y)
+            try:
+                if hucre.locator(s.YORUM_BEGENILDI).count():
+                    return
+                hucre.locator(s.YORUM_BEGEN).first.click()
+                hucre.locator(s.YORUM_BEGENILDI).first.wait_for(state="attached", timeout=5000)
+            except Exception as e:
+                raise self._hata(f"Beğenilemedi (@{y.kullanici}): {e}", "yorum_begen") from e
+        except Exception:
+            self._sifirla()
+            raise
 
     def _video_yolu(self, video: str) -> str | None:
         """İçerik listesine ayrı sekmede bakar; yorum sayfası (self.sayfa) yerinde kalır."""
@@ -195,14 +248,27 @@ class YorumSayfasi:
         if not yol:
             raise self._hata(f"Yorumun videosu bulunamadı: {y.video[:40]}", "sikayet_video")
         vs = self.ctx.new_page()
+        gonderildi = False
         try:
             vs.goto(s.TIKTOK_KOK + yol)
             time.sleep(random.uniform(5, 7))
-            oge = vs.locator(s.VIDEO_YORUM_OGE).filter(has_text=y.metin[:60]).first
-            oge.wait_for(state="visible", timeout=15_000)
+            # Hedef: yazar linki VE tam metin aynı kapta; tek değilse hiçbir şeye tıklanmaz
+            ogeler = vs.locator(s.VIDEO_YORUM_OGE).filter(
+                has=vs.locator(s.VIDEO_YORUM_YAZAR.format(kullanici=y.kullanici))
+            ).filter(has=vs.locator(s.VIDEO_YORUM_METIN).filter(has_text=tam_desen(y.metin)))
+            adet = ogeler.count() if self.y._gorunurse(ogeler.first, 15_000) else 0
+            if adet != 1:
+                raise YorumIslemHatasi(f"Şikayet hedefi tek değil/bulunamadı ({adet} eşleşme): @{y.kullanici}",
+                                       ekran=self.y._ekran_kaydet(vs, "sikayet_hedef"))
+            oge = ogeler.first
             oge.hover()
             oge.locator(s.VIDEO_YORUM_MENU).first.click()
-            vs.get_by_text(s.VIDEO_SIKAYET_METNI, exact=True).first.click()
+            menu = vs.locator(s.VIDEO_SIKAYET_MENU).filter(visible=True).last
+            rapor = menu.get_by_text(s.VIDEO_SIKAYET_METNI, exact=True).first
+            if not self.y._gorunurse(rapor, 3000):
+                raise YorumIslemHatasi(f"Açılan menüde '{s.VIDEO_SIKAYET_METNI}' yok: @{y.kullanici}",
+                                       ekran=self.y._ekran_kaydet(vs, "sikayet_menu"))
+            rapor.click()
             time.sleep(random.uniform(1, 2))
             for sebep in s.VIDEO_SIKAYET_SEBEP[tur]:
                 secenek = vs.get_by_text(sebep, exact=True).first
@@ -213,10 +279,13 @@ class YorumSayfasi:
                 raise RuntimeError(f"şikayet sebebi bulunamadı: {tur}")
             time.sleep(random.uniform(1, 2))
             vs.locator(s.VIDEO_SIKAYET_GONDER).first.click()
+            gonderildi = True
             if not any(self.y._gorunurse(vs.locator(x).first, 8000) for x in s.VIDEO_SIKAYET_TAMAM):
                 raise RuntimeError("şikayet onayı görülmedi")
+        except YorumIslemHatasi:
+            raise
         except Exception as e:
             raise YorumIslemHatasi(f"Şikayet edilemedi (@{y.kullanici}): {e}",
-                                   ekran=self.y._ekran_kaydet(vs, "yorum_sikayet")) from e
+                                   ekran=self.y._ekran_kaydet(vs, "yorum_sikayet"), gonderildi=gonderildi) from e
         finally:
             vs.close()

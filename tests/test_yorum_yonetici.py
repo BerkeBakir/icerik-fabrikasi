@@ -194,6 +194,48 @@ def test_ardisik_hata_bildirimi(tmp_path):
     assert len(b.fotolar) == 1 and "3" in b.fotolar[0][1]
 
 
+def test_ardisik_hata_bildirildi_isaretler(tmp_path):
+    with pytest.raises(YorumIslemHatasi) as e:
+        calistir(tmp_path, [H(f"u{i}", f"q{i}?") for i in range(5)], bozuk=tuple(f"q{i}?" for i in range(5)))
+    assert getattr(e.value, "bildirildi", False) is True
+
+
+class BelirsizSayfa(SahteSayfa):
+    def cevapla(self, y, metin):
+        if y.metin == "q?":
+            raise YorumIslemHatasi("kutu boşalmadı", ekran=Path("b.png"), gonderildi=True)
+        super().cevapla(y, metin)
+
+
+def test_gonderildi_hatasi_belirsiz_ve_tekrar_denenmez(tmp_path):
+    db = DB(tmp_path / "f.db")
+    y = [H("a", "q?"), H("b", "Is this real?")]
+    b = SahteBildirim()
+    sayfa = BelirsizSayfa(y)
+    ozet = yon.yorumlari_isle(kanal(), db, SahteLLM(), SahteYorumcu(sayfa), b, LOG, uyku=lambda s: None)
+    kim = yorum_kimligi("t1", "a", "q?", "PART 1 | x")
+    assert db.yorum_getir(kim).durum == "belirsiz"
+    assert ozet.hata == 1 and ozet.cevap == 1 and sayfa.eylemler == [("cevap", "b", "Good question!")]
+    assert len(b.fotolar) == 1
+    yol, m = b.fotolar[0]
+    assert yol == Path("b.png") and m.startswith("⚠️ [t1] @a:") and "tekrar denenmeyecek" in m and '"q?"' in m
+    sayfa2 = BelirsizSayfa(y)
+    yon.yorumlari_isle(kanal(), db, SahteLLM(), SahteYorumcu(sayfa2), SahteBildirim(), LOG, uyku=lambda s: None)
+    assert sayfa2.eylemler == []
+
+
+def test_gonderildi_hatasi_ekransiz_mesaj_ve_ardisik_sayilir(tmp_path):
+    class HepBelirsiz(SahteSayfa):
+        def cevapla(self, y, metin):
+            raise YorumIslemHatasi("belirsiz", gonderildi=True)
+    db = DB(tmp_path / "f.db")
+    b = SahteBildirim()
+    with pytest.raises(YorumIslemHatasi):
+        yon.yorumlari_isle(kanal(), db, SahteLLM(), SahteYorumcu(HepBelirsiz([H(f"u{i}", f"q{i}?") for i in range(5)])),
+                           b, LOG, uyku=lambda s: None)
+    assert sum(m.startswith("⚠️") for m in b.mesajlar) == 3
+
+
 def test_yetki_hatasi_hemen_yukselir(tmp_path):
     class YetkisizSayfa(SahteSayfa):
         def cevapla(self, y, metin):

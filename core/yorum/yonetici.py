@@ -57,6 +57,13 @@ def baglam_bul(db: DB, kanal_ad: str, video: str) -> str | None:
     return None
 
 
+def _bildir(bildirim, ekran, mesaj: str) -> None:
+    if ekran:
+        bildirim.foto(ekran, mesaj)
+    else:
+        bildirim.mesaj(mesaj)
+
+
 def _limitler(kanal) -> dict[str, int]:
     return {"cevap": kanal.yorum_en_fazla, "sikayet": SIKAYET_SINIR, "begeni": BEGENI_SINIR}
 
@@ -133,16 +140,19 @@ def yorumlari_isle(kanal, db: DB, llm, yorumcu, bildirim, log: logging.Logger, k
             except YorumIslemHatasi as e:
                 if e.yetki:
                     raise
-                db.yorum_hata(y.kimlik, str(e))
                 ozet.hata += 1
                 ardisik_hata += 1
                 log.warning("Eylem başarısız (@%s, %s): %s", h.kullanici, eylem, e)
+                if e.gonderildi:  # eylem gerçekleşmiş olabilir: tekrar denenirse çift cevap/şikayet olur
+                    db.yorum_belirsiz(y.kimlik, str(e))
+                    _bildir(bildirim, e.ekran, f'⚠️ [{kanal.ad}] @{h.kullanici}: {eylem} gönderildi ama '
+                                               f'doğrulanamadı (tekrar denenmeyecek): "{h.metin}"')
+                else:
+                    db.yorum_hata(y.kimlik, str(e))
                 if ardisik_hata >= ARDISIK_HATA_SINIR:
-                    mesaj = f"🚨 [{kanal.ad}] Yorum işleme durdu: üst üste {ardisik_hata} hata. Son hata: {e}"
-                    if e.ekran:
-                        bildirim.foto(e.ekran, mesaj)
-                    else:
-                        bildirim.mesaj(mesaj)
+                    _bildir(bildirim, e.ekran,
+                            f"🚨 [{kanal.ad}] Yorum işleme durdu: üst üste {ardisik_hata} hata. Son hata: {e}")
+                    e.bildirildi = True
                     raise
                 continue
             ardisik_hata = 0

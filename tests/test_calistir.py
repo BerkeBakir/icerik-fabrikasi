@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -132,12 +133,16 @@ class _Bildirim:
     def mesaj(self, m):
         _Bildirim.mesajlar.append(m)
 
+    def foto(self, yol, m):
+        _Bildirim.fotolar.append((yol, m))
+
 
 @pytest.fixture
 def yorum_ortami(ortam, monkeypatch):
     k = calistir.kanal_yukle("t1")
     k.yorum_aktif, k.yorum_hesap = True, "kanal"
     _Bildirim.mesajlar = []
+    _Bildirim.fotolar = []
     monkeypatch.setattr(calistir, "Bildirim", _Bildirim)
     monkeypatch.setattr(calistir, "ortam", lambda anahtar, zorunlu=True: "x")
     monkeypatch.setattr(calistir, "kilit_yolu", lambda: calistir.KOK / "veri" / "tiktok.kilit")
@@ -170,6 +175,42 @@ def test_yorumlar_yetki_hatasi_bildirir(yorum_ortami, monkeypatch):
     monkeypatch.setattr("core.yorum.yonetici.yorumlari_isle", patla)
     assert calistir.main(["t1", "--yorumlar"]) == 1
     assert any("--giris" in m for m in _Bildirim.mesajlar)
+
+
+def _yorum_hatasi_firlat(monkeypatch, hata):
+    def patla(*a, **kw):
+        raise hata
+    monkeypatch.setattr("core.yorum.yonetici.yorumlari_isle", patla)
+
+
+def test_yorumlar_islem_hatasi_ekranla_bildirir(yorum_ortami, monkeypatch):
+    from core.yorum import YorumIslemHatasi
+    _yorum_hatasi_firlat(monkeypatch, YorumIslemHatasi("satırlar okunamadı", ekran=Path("e.png")))
+    assert calistir.main(["t1", "--yorumlar"]) == 1
+    assert _Bildirim.fotolar == [(Path("e.png"), "🚨 [t1] Yorum işleme hatası: satırlar okunamadı")]
+
+
+def test_yorumlar_islem_hatasi_ekransiz_mesaj(yorum_ortami, monkeypatch):
+    from core.yorum import YorumIslemHatasi
+    _yorum_hatasi_firlat(monkeypatch, YorumIslemHatasi("sayfa açılamadı"))
+    assert calistir.main(["t1", "--yorumlar"]) == 1
+    assert _Bildirim.mesajlar == ["🚨 [t1] Yorum işleme hatası: sayfa açılamadı"]
+
+
+def test_yorumlar_bildirilmis_hata_tekrar_bildirilmez(yorum_ortami, monkeypatch):
+    from core.yorum import YorumIslemHatasi
+    e = YorumIslemHatasi("üst üste", ekran=Path("e.png"))
+    e.bildirildi = True
+    _yorum_hatasi_firlat(monkeypatch, e)
+    assert calistir.main(["t1", "--yorumlar"]) == 1
+    assert _Bildirim.mesajlar == [] and _Bildirim.fotolar == []
+
+
+def test_yorumlar_islem_hatasi_kuruda_bildirmez(yorum_ortami, monkeypatch):
+    from core.yorum import YorumIslemHatasi
+    _yorum_hatasi_firlat(monkeypatch, YorumIslemHatasi("x"))
+    assert calistir.main(["t1", "--yorumlar", "--kuru"]) == 1
+    assert _Bildirim.mesajlar == [] and _Bildirim.fotolar == []
 
 
 def test_yorumlar_kilit_doluysa_atlar(yorum_ortami, monkeypatch):
