@@ -55,7 +55,9 @@ Classify the comment and, when needed, write a reply.
 - "spam": ads, self-promotion, "follow me", links, scams, gibberish.
 
 "cevap": ONLY for "soru" and "yapici", otherwise empty. Rules:
-- Same language as the comment, friendly and natural, at most {sinir} characters, at most one emoji.
+- Write the reply in the SAME language as the comment text itself (an English comment gets an English reply;
+  use Turkish only if the comment is written in Turkish). Friendly and natural, at most {sinir} characters,
+  at most one emoji.
 - No links, no hashtags, no @mentions.
 - Never claim the story happened to you; the stories come from Reddit. Never share personal information.
 - Do not argue. For "yapici" thank them and say you'll consider it.
