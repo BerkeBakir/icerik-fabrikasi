@@ -64,3 +64,28 @@ def test_main_hata_kodunu_dondurur(monkeypatch):
     monkeypatch.setattr(zamanla.subprocess, "run", lambda komut, **kw: cagrilar.append(komut) or Hata())
     assert zamanla.main(["k1", "--saat", "09:00", "--saat", "10:00"]) == 5
     assert len(cagrilar) == 1
+
+
+def test_ek_bayrak_komuta_ve_ada_eklenir():
+    k = zamanla.olustur_komutu("t1", "10:00", Path("C:/v/python.exe"), Path("D:/p"), ek="--yorumlar")
+    assert k[k.index("/TN") + 1] == "IcerikFabrikasi_t1_yorumlar_1000"
+    assert k[k.index("/TR") + 1].endswith(" t1 --yorumlar")
+    assert k[k.index("/SC") + 1] == "DAILY"
+
+
+def test_haftalik_gorev():
+    k = zamanla.olustur_komutu("t1", "12:00", Path("p"), Path("k"), ek="--yorum-raporu", gun="SUN")
+    assert k[k.index("/SC") + 1] == "WEEKLY" and k[k.index("/D") + 1] == "SUN"
+    assert k[k.index("/TN") + 1] == "IcerikFabrikasi_t1_yorumraporu_SUN_1200"
+    assert zamanla.sil_komutu("t1", "12:00", ek="--yorum-raporu", gun="SUN")[-1] == "IcerikFabrikasi_t1_yorumraporu_SUN_1200"
+
+
+def test_gecersiz_gun():
+    with pytest.raises(ValueError):
+        zamanla.olustur_komutu("t1", "12:00", Path("p"), Path("k"), gun="PAZ")
+
+
+def test_main_ek_ve_haftalik(monkeypatch):
+    cagrilar = _yakala(monkeypatch)
+    assert zamanla.main(["t1", "--saat", "12:00", "--ek=--yorum-raporu", "--haftalik", "SUN"]) == 0
+    assert "WEEKLY" in cagrilar[0][0]

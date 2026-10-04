@@ -121,3 +121,74 @@ def test_kuru_modda_hata_telegrama_gitmez(calisma):
 def test_modlar_birbirini_dislar(ikinci):
     with pytest.raises(SystemExit):
         calistir.main(["k", "--onayla", ikinci])
+
+
+class _Bildirim:
+    mesajlar = []
+
+    def __init__(self, *a, **kw):
+        pass
+
+    def mesaj(self, m):
+        _Bildirim.mesajlar.append(m)
+
+
+@pytest.fixture
+def yorum_ortami(ortam, monkeypatch):
+    k = calistir.kanal_yukle("t1")
+    k.yorum_aktif, k.yorum_hesap = True, "kanal"
+    _Bildirim.mesajlar = []
+    monkeypatch.setattr(calistir, "Bildirim", _Bildirim)
+    monkeypatch.setattr(calistir, "ortam", lambda anahtar, zorunlu=True: "x")
+    monkeypatch.setattr(calistir, "kilit_yolu", lambda: calistir.KOK / "veri" / "tiktok.kilit")
+    monkeypatch.setattr(calistir, "_yorumcu", lambda kanal, log: "YORUMCU")
+    monkeypatch.setattr("core.llm.Gemini", lambda *a, **kw: "LLM")
+    return k
+
+
+def test_yorumlar_bayragi_akisi_cagirir(yorum_ortami, monkeypatch):
+    cagri = {}
+
+    def sahte(kanal, db, llm, yorumcu, bildirim, log, kuru=False):
+        cagri.update(kanal=kanal.ad, llm=llm, yorumcu=yorumcu, kuru=kuru)
+    monkeypatch.setattr("core.yorum.yonetici.yorumlari_isle", sahte)
+    assert calistir.main(["t1", "--yorumlar"]) == 0
+    assert cagri == {"kanal": "t1", "llm": "LLM", "yorumcu": "YORUMCU", "kuru": False}
+    assert calistir.main(["t1", "--yorumlar", "--kuru"]) == 0 and cagri["kuru"] is True
+
+
+def test_yorumlar_kapaliysa_ayar_hatasi(yorum_ortami):
+    yorum_ortami.yorum_aktif = False
+    assert calistir.main(["t1", "--yorumlar"]) == 2
+
+
+def test_yorumlar_yetki_hatasi_bildirir(yorum_ortami, monkeypatch):
+    from core.yorum import YorumIslemHatasi
+
+    def patla(*a, **kw):
+        raise YorumIslemHatasi("oturum kapalı", yetki=True)
+    monkeypatch.setattr("core.yorum.yonetici.yorumlari_isle", patla)
+    assert calistir.main(["t1", "--yorumlar"]) == 1
+    assert any("--giris" in m for m in _Bildirim.mesajlar)
+
+
+def test_yorumlar_kilit_doluysa_atlar(yorum_ortami, monkeypatch):
+    from core.kilit import KilitHatasi
+
+    def dolu(*a, **kw):
+        raise KilitHatasi("dolu")
+    monkeypatch.setattr(calistir, "dosya_kilidi", dolu)
+    assert calistir.main(["t1", "--yorumlar"]) == 0
+    assert _Bildirim.mesajlar and _Bildirim.mesajlar[0].startswith("⏭")
+
+
+def test_yorum_raporu_bayragi(yorum_ortami, monkeypatch):
+    monkeypatch.setattr("core.yorum.yonetici.rapor", lambda kanal, db, b, simdi: "📊 rapor")
+    assert calistir.main(["t1", "--yorum-raporu"]) == 0
+
+
+def test_yorumlar_diger_bayraklarla_birlesmez(yorum_ortami):
+    with pytest.raises(SystemExit):
+        calistir.main(["t1", "--yorumlar", "--giris"])
+    with pytest.raises(SystemExit):
+        calistir.main(["t1", "--yorumlar", "--yorum-raporu"])

@@ -4,6 +4,8 @@
   python calistir.py <kanal> --giris    TikTok girişi / YouTube yetkisi (bir kerelik)
   python calistir.py <kanal> --onayla         doğrulanamayan TikTok paylaşımı yayında: işi ilerlet
   python calistir.py <kanal> --yeniden-dene   doğrulanamayan TikTok paylaşımı yayında değil: tekrar yükle
+  python calistir.py <kanal> --yorumlar [--kuru]   TikTok yorumlarını işle (--kuru: sadece oku/sınıflandır)
+  python calistir.py <kanal> --yorum-raporu        son 7 günün yapıcı yorumlarını Telegram'a raporla
   python calistir.py --ses-ornekleri    ses örneklerini cikti/ses_ornekleri/ altına üret
 """
 from __future__ import annotations
@@ -14,9 +16,10 @@ from datetime import datetime
 
 from core import gunluk
 from core.ayar import (KOK, AyarHatasi, client_secret_yolu, db_yolu, eski_token_yolu, hata_klasoru,
-                       kanal_yukle, ortam, ortami_yukle, profil_yolu, token_yolu)
+                       kanal_yukle, kilit_yolu, ortam, ortami_yukle, profil_yolu, token_yolu)
 from core.bildirim import Bildirim
 from core.db import DB
+from core.kilit import KilitHatasi, dosya_kilidi
 from core.onkontrol import onkontrol
 
 
@@ -76,6 +79,51 @@ def _gemini_modelleri() -> list[str]:
     return list(VARSAYILAN_MODELLER)
 
 
+def _yorumcu(kanal, log):
+    from core.yorum.tiktok_yorum import TikTokYorumcu
+
+    return TikTokYorumcu(profil_yolu(kanal), hata_klasoru(), log, hesap=kanal.yorum_hesap)
+
+
+def _yorumlar(kanal, log, kuru: bool) -> int:
+    from core.llm import Gemini
+    from core.yorum import YorumIslemHatasi
+    from core.yorum import yonetici
+
+    if kanal.platform != "tiktok" or not kanal.yorum_aktif:
+        print(f"[{kanal.ad}] Yorum işleme kapalı (kanal dosyasında 'yorum: {{aktif: true, ...}}' gerekli)")
+        return 2
+    bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
+    try:
+        with dosya_kilidi(kilit_yolu(), bekle_sn=1800):
+            llm = Gemini(ortam("GEMINI_API_KEY"), modeller=_gemini_modelleri(), log=log)
+            yonetici.yorumlari_isle(kanal, DB(db_yolu()), llm, _yorumcu(kanal, log), bildirim, log, kuru=kuru)
+    except KilitHatasi:
+        log.info("TikTok tarayıcısı meşgul, yorum çalıştırması atlandı")
+        if not kuru:
+            bildirim.mesaj(f"⏭ [{kanal.ad}] TikTok meşgul, yorum çalıştırması atlandı")
+        return 0
+    except YorumIslemHatasi as e:
+        log.error("Yorum işleme hatası: %s", e)
+        if e.yetki and not kuru:
+            bildirim.mesaj(f"🚨 [{kanal.ad}] TikTok oturumu kapalı: 'calistir.py {kanal.ad} --giris' çalıştır")
+        return 1
+    except Exception as e:
+        log.exception("Yorum işleme beklenmeyen hata")
+        if not kuru:
+            bildirim.mesaj(f"🚨 [{kanal.ad}] Yorum işleme hatası: {type(e).__name__}: {e}")
+        return 1
+    return 0
+
+
+def _yorum_raporu(kanal, log) -> int:
+    from core.yorum import yonetici
+
+    bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
+    log.info(yonetici.rapor(kanal, DB(db_yolu()), bildirim, datetime.now()))
+    return 0
+
+
 def main(argv=None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description="İçerik Fabrikası")
@@ -86,7 +134,15 @@ def main(argv=None) -> int:
     g.add_argument("--ses-ornekleri", action="store_true")
     g.add_argument("--onayla", action="store_true", help="doğrulanamayan paylaşım yayında, işi ilerlet")
     g.add_argument("--yeniden-dene", action="store_true", help="doğrulanamayan paylaşımı tekrar yükle")
+    p.add_argument("--yorumlar", action="store_true", help="TikTok yorumlarını işle (--kuru ile birleşebilir)")
+    p.add_argument("--yorum-raporu", action="store_true", help="haftalık yapıcı yorum raporu")
     a = p.parse_args(argv)
+    if a.yorumlar and a.yorum_raporu:
+        p.error("--yorumlar ve --yorum-raporu birlikte kullanılamaz")
+    if (a.yorumlar or a.yorum_raporu) and (a.giris or a.ses_ornekleri or a.onayla or a.yeniden_dene):
+        p.error("--yorumlar/--yorum-raporu yalnız --kuru ile birleşebilir")
+    if a.yorum_raporu and a.kuru:
+        p.error("--yorum-raporu --kuru ile kullanılmaz")
     ortami_yukle()
 
     if a.ses_ornekleri:
@@ -113,6 +169,10 @@ def main(argv=None) -> int:
             return 1
     if a.onayla or a.yeniden_dene:
         return _onay(kanal, a.onayla)
+    if a.yorumlar:
+        return _yorumlar(kanal, log, a.kuru)
+    if a.yorum_raporu:
+        return _yorum_raporu(kanal, log)
 
     bildirim = Bildirim(ortam("TELEGRAM_BOT_TOKEN", False), ortam("TELEGRAM_CHAT_ID", False), log)
     hatalar = onkontrol(kanal, kuru=a.kuru)
