@@ -31,9 +31,10 @@ def yas_gun(metin: str) -> float | None:
     return int(r.group(1)) * _BIRIM[r.group(2)] if r else None
 
 
-def tam_desen(metin: str) -> re.Pattern:
-    """Tam metin eşlemesi: çapalı, büyük/küçük harf duyarlı, boşluk farklarına toleranslı."""
-    return re.compile(r"^\s*" + r"\s+".join(map(re.escape, metin.split())) + r"\s*$")
+def tam_desen(metin: str, at: bool = False) -> re.Pattern:
+    """Tam metin eşlemesi: çapalı, büyük/küçük harf duyarlı, boşluk farklarına toleranslı.
+    at=True: başta isteğe bağlı tek '@' (kullanıcı adları)."""
+    return re.compile(r"^\s*" + ("@?" if at else "") + r"\s+".join(map(re.escape, metin.split())) + r"\s*$")
 
 
 def _govde(metin: str) -> str:
@@ -106,7 +107,7 @@ class YorumSayfasi:
     def _hucre(self, y: HamYorum):
         try:
             hucreler = self.sayfa.locator(s.YORUM_HUCRE).filter(
-                has=self.sayfa.locator(s.YORUM_KULLANICI).filter(has_text=tam_desen(y.kullanici))
+                has=self.sayfa.locator(s.YORUM_KULLANICI).filter(has_text=tam_desen(y.kullanici, at=True))
             ).filter(has=self.sayfa.locator(s.YORUM_METIN).filter(has_text=tam_desen(y.metin)))
             adet = hucreler.count()
         except Exception as e:
@@ -126,9 +127,13 @@ class YorumSayfasi:
         except Exception as e:
             raise self._hata(f"Yorumlar okunamadı: {e}", "yorum_oku") from e
         if not gorunur:
-            self.y.log.warning("Yorum hücresi 10 sn içinde görünmedi; boş okuma")
-            self.y._ekran_kaydet(self.sayfa, "yorum_bos")
-            return []
+            try:
+                bos = self.y._gorunurse(self.sayfa.locator(s.YORUM_BOS_METIN).first, 2000)
+            except Exception as e:
+                raise self._hata(f"Yorumlar okunamadı: {e}", "yorum_oku") from e
+            if bos:
+                return []  # gerçekten yorum yok
+            raise self._hata("Yorum listesi görünmedi (arayüz değişmiş ya da hiç yorum yok)", "yorum_bos")
         sonuc: list[HamYorum] = []
         okunan = bozuk = 0
         for i in range(min(adet, en_fazla)):
@@ -162,10 +167,17 @@ class YorumSayfasi:
         except Exception:
             self._sifirla()
             raise
+        self._sifirla()  # cevap arayüzü kapansın; sonraki "Reply" tek kutu bulsun (kendi hatasını yutar)
 
     @staticmethod
     def _bosaldi(kutular) -> bool:
-        return kutular.count() == 0 or kutular.first.input_value(timeout=1000) == ""
+        try:
+            return kutular.count() == 0 or kutular.first.input_value(timeout=1000) == ""
+        except Exception:  # kutu count ile okuma arasında DOM'dan kalkmış olabilir: yeniden say
+            try:
+                return kutular.count() == 0
+            except Exception:
+                return False
 
     def _cevapla(self, y: HamYorum, metin: str) -> None:
         hucre = self._hucre(y)

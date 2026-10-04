@@ -232,6 +232,17 @@ def test_gonderildi_hatasi_belirsiz_ve_tekrar_denenmez(tmp_path):
     assert sayfa2.eylemler == []
 
 
+def test_belirsiz_eylem_calistirma_sinirina_sayilir(tmp_path):
+    y = [H("a", "q?"), H("b", "Is this real?")]
+    ozet, sayfa, _, _, _ = calistir(tmp_path, y, k=kanal(en_fazla=1))  # sahte: ikisi de başarılı olur
+    assert ozet.cevap == 1 and ozet.bekleyen == 1
+    db = DB(tmp_path / "g.db")
+    sayfa = BelirsizSayfa(y)
+    ozet = yon.yorumlari_isle(kanal(en_fazla=1), db, SahteLLM(), SahteYorumcu(sayfa), SahteBildirim(), LOG,
+                              uyku=lambda s: None)
+    assert sayfa.eylemler == [] and ozet.hata == 1 and ozet.bekleyen == 1
+
+
 def test_gonderildi_hatasi_ekransiz_mesaj_ve_ardisik_sayilir(tmp_path):
     class HepBelirsiz(SahteSayfa):
         def cevapla(self, y, metin):

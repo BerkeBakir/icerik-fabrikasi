@@ -148,6 +148,7 @@ def yorumlari_isle(kanal, db: DB, llm, yorumcu, bildirim, log: logging.Logger, k
                 log.warning("Eylem başarısız (@%s, %s): %s", h.kullanici, eylem, e)
                 if e.gonderildi:  # eylem gerçekleşmiş olabilir: tekrar denenirse çift cevap/şikayet olur
                     db.yorum_belirsiz(y.kimlik, str(e))
+                    sayac[eylem] += 1  # gerçekleşmiş olabilir: çalıştırma sınırına sayılır
                     _bildir(bildirim, e.ekran, f'⚠️ [{kanal.ad}] @{h.kullanici}: {eylem} gönderildi ama '
                                                f'doğrulanamadı (tekrar denenmeyecek): "{h.metin}"')
                 else:

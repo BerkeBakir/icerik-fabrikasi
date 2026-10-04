@@ -63,6 +63,7 @@ YORUM_ZAMAN = 'span[data-tt="components_MessageCell_span_20"]'
 YORUM_VIDEO = '[data-tt="components_MessageCell_TUXText"]'  # hücredeki SONUNCUSU video başlığı
 YORUM_BEGEN = 'button[data-tt="components_MessageCell_Clickable"]'  # hücredeki İLKİ kalp
 YORUM_BEGENILDI = '[data-icon="HeartFill"]:visible'
+YORUM_BOS_METIN = 'text=/no comments/i'  # gerçek boş listede görünen metin
 YORUM_CEVAP_METNI = "Reply"
 YORUM_CEVAP_KUTU = "textarea#comment-input"
 YORUM_CEVAP_GONDER_METNI = "Post"  # kutu yanındaki gönder düğmesinin tam erişilebilir adı (yoksa Enter)

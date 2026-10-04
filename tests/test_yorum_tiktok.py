@@ -114,13 +114,30 @@ class _Yorumcu:
         return Path(ad)
 
 
-def test_oku_gorunur_hucre_yoksa_bos_ve_ekran(caplog):
+def test_oku_gorunur_hucre_yoksa_hata_ve_ekran():
     y = _Yorumcu(gorunur=False)
     ys = YorumSayfasi(y, None, _Sayfa([]))
-    with caplog.at_level(logging.WARNING, logger="test"):
-        assert ys.oku() == []
-    assert y.ekranlar == ["yorum_bos"]
-    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    with pytest.raises(YorumIslemHatasi, match="Yorum listesi görünmedi") as e:
+        ys.oku()
+    assert y.ekranlar == ["yorum_bos"] and e.value.ekran == Path("yorum_bos")
+    assert not e.value.yetki
+
+
+def test_oku_bos_durum_metni_gorunurse_bos_liste():
+    class BosMetinYorumcu(_Yorumcu):
+        def _gorunurse(self, loc, ms):
+            return loc.sel == s.YORUM_BOS_METIN
+
+    class SelKonum(_Konum):
+        def __init__(self, sel):
+            super().__init__([])
+            self.sel = sel
+
+    y = BosMetinYorumcu()
+    sayfa = _Sayfa([])
+    sayfa.locator = lambda sel: SelKonum(sel)
+    assert YorumSayfasi(y, None, sayfa).oku() == []
+    assert y.ekranlar == []
 
 
 def test_oku_playwright_hatasi_yorum_islem_hatasi():
@@ -382,7 +399,52 @@ def test_cevap_gonderildikten_sonra_hata_gonderildi_isaretli(uykusuz):
 def test_cevap_basarili(uykusuz):
     ys, sayfa, kayit = _kur()
     ys.cevapla(YH, "Thanks!")
-    assert ("yaz", "Thanks!") in kayit and ("tik", "Post") in kayit and sayfa.goto_cagrilari == []
+    assert ("yaz", "Thanks!") in kayit and ("tik", "Post") in kayit
+    assert sayfa.goto_cagrilari == [s.YORUM_URL]  # cevap arayüzü kapansın
+
+
+def test_cevap_basarili_sifirlama_hatasi_firlatmaz(uykusuz):
+    ys, sayfa, kayit = _kur(goto_hata=RuntimeError("ağ yok"))
+    ys.cevapla(YH, "Thanks!")
+    assert ("tik", "Post") in kayit and sayfa.goto_cagrilari == [s.YORUM_URL]
+
+
+def test_hucre_kullanici_basinda_at_toleransli(uykusuz):
+    ys, sayfa, _ = _kur()
+    ys._hucre(YH)
+    desen = sayfa.konumlar[s.YORUM_KULLANICI].filtreler[-1]["has_text"]
+    assert desen.search("ali") and desen.search(" @ali ")
+    assert not desen.search("@@ali") and not desen.search("ali2") and not desen.search("@bali")
+
+
+def test_bosaldi_kutu_arada_kopsa_bosaldi_sayilir():
+    class Kutular:
+        def __init__(self):
+            self.adetler = [1, 0]
+            self.first = self
+
+        def count(self):
+            return self.adetler.pop(0)
+
+        def input_value(self, timeout=0):
+            raise RuntimeError("detached")
+
+    assert YorumSayfasi._bosaldi(Kutular()) is True
+
+
+def test_bosaldi_kutu_hala_varsa_ve_okunamiyorsa_bosalmadi():
+    class Kutular:
+        first = None
+
+        def count(self):
+            return 1
+
+        def input_value(self, timeout=0):
+            raise RuntimeError("detached")
+
+    k = Kutular()
+    k.first = k
+    assert YorumSayfasi._bosaldi(k) is False
 
 
 def test_begen_hatasi_sayfayi_sifirlar(uykusuz):
