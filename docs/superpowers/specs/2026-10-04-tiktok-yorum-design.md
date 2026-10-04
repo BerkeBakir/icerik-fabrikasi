@@ -28,7 +28,14 @@ Telegram bildirimleriyle izler.
 
 4. Çalıştırma sonunda Telegram özeti: `🧾 [kanal] 3 cevap, 5 beğeni, 1 şikayet (1 hata)`.
 
-### Küfür çift kontrolü
+### Küfür çift kontrolü — güncelleme (2026-10-04, kullanıcı kararı)
+Liste ikiye ayrılır. **Ağır** ifadeler (ırkçı/homofobik hakaretler, "kys"/"kill yourself", "orospu",
+"siktir", "amk" vb.) Gemini'ye sorulmadan `hakaret` → şikayet. **Hafif** ifadeler ("bitch", "whore",
+"fuck you", "gerizekalı" vb.; izleyiciler bunları hikâye karakterleri için de kullanır) Gemini'ye sorulur:
+Gemini `hakaret` derse şikayet; demezse yorum **sessiz** kalır (cevap yok, beğeni yok, şikayet yok;
+durum `atlandi`). Türkçe büyük "İ" eşleşme öncesi "i"ye çevrilir. Aşağıdaki eski paragrafın yerine geçer.
+
+### Küfür çift kontrolü (ilk sürüm)
 Gemini kararından bağımsız: yorum metni küçük bir küfür listesiyle (İngilizce + Türkçe, kelime sınırıyla)
 eşleşirse tür zorla `hakaret` olur (Gemini çağrılmaz). Liste genel argoyu ("holy shit") değil, hakaret ve
 aşağılama kalıplarını içerir. Üretilen cevap da aynı listeden geçer; eşleşirse ya da soru/yapıcı için cevap

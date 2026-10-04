@@ -12,13 +12,24 @@ CEVAPLI = ("soru", "yapici")
 CEVAP_SINIR = 150
 
 # Genel argo ("holy shit") değil; hakaret/aşağılama kalıpları. Kelime sınırıyla eşleşir.
-_KUFUR = [
-    r"f+\W*u+\W*c+\W*k+\W*(you|u|off|yourself)", r"cunts?", r"bitch(es)?", r"whores?", r"sluts?",
-    r"retard(ed|s)?", r"kys", r"kill\s+your\s*self", r"n[i1]gg(a|er)s?", r"f[a@]gg?ots?", r"motherfucker",
-    r"amk", r"aq", r"orospu\w*", r"siktir\w*", r"sikeyim", r"s[iı]k[iı]m", r"piç(ler)?", r"yarra[kğ]\w*",
-    r"anan[iı]\s*s\w*", r"g[oö]t\s*veren", r"gerizekal[iı]\w*", r"şerefsiz\w*", r"serefsiz\w*",
+# Ağır: Gemini'ye sorulmadan şikayet. Hafif: izleyiciler hikâye karakterleri için de kullanır, Gemini karar verir.
+_AGIR = [
+    r"n[i1]gg(a|er)s?", r"f[a@]gg?ots?", r"kys", r"kill\s+your\s*self", r"orospu\w*", r"siktir\w*", r"sikeyim",
+    r"amk", r"aq", r"piç(ler)?", r"yarra[kğ]\w*", r"anan[iı]\s*s\w*", r"g[oö]t\s*veren",
 ]
-_KUFUR_DESENI = re.compile(r"(?<!\w)(" + "|".join(_KUFUR) + r")(?!\w)", re.IGNORECASE)
+_HAFIF = [
+    r"f+\W*u+\W*c+\W*k+\W*(you|u|off|yourself)", r"cunts?", r"bitch(es)?", r"whores?", r"sluts?",
+    r"retard(ed|s)?", r"motherfucker", r"s[iı]k[iı]m", r"gerizekal[iı]\w*", r"şerefsiz\w*", r"serefsiz\w*",
+]
+
+
+def _desen(liste: list[str]) -> re.Pattern:
+    return re.compile(r"(?<!\w)(" + "|".join(liste) + r")(?!\w)", re.IGNORECASE)
+
+
+_AGIR_DESENI = _desen(_AGIR)
+_HAFIF_DESENI = _desen(_HAFIF)
+SESSIZ = "sessiz"  # iç sonuç: cevap/beğeni/şikayet yok; Gemini şemasında yok
 
 SEMA = {
     "type": "object",
@@ -66,8 +77,20 @@ class Karar:
     oneri: str
 
 
+def _norm(metin: str) -> str:
+    return (metin or "").replace("İ", "i")
+
+
+def agir_kufurlu(metin: str) -> bool:
+    return bool(_AGIR_DESENI.search(_norm(metin)))
+
+
+def hafif_kufurlu(metin: str) -> bool:
+    return bool(_HAFIF_DESENI.search(_norm(metin)))
+
+
 def kufurlu(metin: str) -> bool:
-    return bool(_KUFUR_DESENI.search(metin or ""))
+    return agir_kufurlu(metin) or hafif_kufurlu(metin)
 
 
 def _temiz_cevap(metin: str) -> str:
@@ -85,7 +108,7 @@ def istem(yorum: HamYorum, baglam: str | None) -> str:
 
 
 def siniflandir(llm, yorum: HamYorum, baglam: str | None = None) -> Karar:
-    if kufurlu(yorum.metin):
+    if agir_kufurlu(yorum.metin):
         return Karar("hakaret", "", "", "")
     v = llm.json_uret(istem(yorum, baglam), SEMA, sicaklik=0.4)
     tur = v.get("tur") if v.get("tur") in TURLER else "yorum"
@@ -93,6 +116,8 @@ def siniflandir(llm, yorum: HamYorum, baglam: str | None = None) -> Karar:
     if tur == "yapici":
         konu = v.get("konu") if v.get("konu") in KONULAR else "diger"
         oneri = (v.get("oneri") or "").strip()[:200]
+    if hafif_kufurlu(yorum.metin):
+        return Karar("hakaret" if tur == "hakaret" else SESSIZ, "", "", "")
     cevap = _temiz_cevap(v.get("cevap") or "") if tur in CEVAPLI else ""
     if tur in CEVAPLI and (not cevap or kufurlu(cevap)):
         tur, cevap = "yorum", ""

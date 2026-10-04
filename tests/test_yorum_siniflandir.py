@@ -1,7 +1,7 @@
 import pytest
 
 from core.yorum import HamYorum, YorumIslemHatasi
-from core.yorum.siniflandir import Karar, istem, kufurlu, siniflandir
+from core.yorum.siniflandir import SESSIZ, TURLER, Karar, agir_kufurlu, hafif_kufurlu, istem, kufurlu, siniflandir
 
 
 class SahteLLM:
@@ -34,10 +34,40 @@ def test_kufurlu_genel_argoyu_ve_masumlari_gecer(metin):
     assert not kufurlu(metin)
 
 
-def test_kufurlu_yorumda_llm_cagrilmaz():
+@pytest.mark.parametrize("metin", ["kill yourself", "amk ya", "siktir git", "Orospu çocuğu", "seni piç", "PİÇ",
+                                   "SİKTİR", "nigga", "kys"])
+def test_agir_kufur_yakalanir(metin):
+    assert agir_kufurlu(metin) and not hafif_kufurlu(metin) and kufurlu(metin)
+
+
+@pytest.mark.parametrize("metin", ["you stupid bitch", "f u c k you", "fuck you", "what a retard", "GERİZEKALI",
+                                   "şerefsiz"])
+def test_hafif_kufur_yakalanir(metin):
+    assert hafif_kufurlu(metin) and not agir_kufurlu(metin) and kufurlu(metin)
+
+
+def test_agir_kufurde_llm_cagrilmaz():
     llm = SahteLLM({"tur": "soru", "cevap": "x"})
-    k = siniflandir(llm, HamYorum("a", "fuck you", "v"))
+    k = siniflandir(llm, HamYorum("a", "siktir git", "v"))
     assert k == Karar("hakaret", "", "", "") and llm.cagri == []
+
+
+def test_hafif_kufur_llm_hakaret_derse_hakaret():
+    llm = SahteLLM({"tur": "hakaret"})
+    k = siniflandir(llm, HamYorum("a", "fuck you", "v"))
+    assert k == Karar("hakaret", "", "", "") and len(llm.cagri) == 1
+
+
+@pytest.mark.parametrize("yanit", [{"tur": "yorum"}, {"tur": "soru", "cevap": "Nice!"}, {"tur": "spam"},
+                                   {"tur": "yapici", "cevap": "ok", "konu": "ses", "oneri": "x"}])
+def test_hafif_kufur_llm_hakaret_demezse_sessiz(yanit):
+    llm = SahteLLM(yanit)
+    k = siniflandir(llm, HamYorum("a", "she is such a bitch, YTA", "v"))
+    assert k == Karar(SESSIZ, "", "", "") and len(llm.cagri) == 1
+
+
+def test_sessiz_gemini_semasinda_yok():
+    assert SESSIZ == "sessiz" and SESSIZ not in TURLER
 
 
 def test_soru_cevabi_temizlenir_ve_kisaltilir():

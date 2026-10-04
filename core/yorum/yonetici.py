@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from core.db import DB, yorum_kimligi
 from core.yorum import HamYorum, YorumIslemHatasi
-from core.yorum.siniflandir import siniflandir
+from core.yorum.siniflandir import SESSIZ, siniflandir
 
 SIKAYET_SINIR = 5
 BEGENI_SINIR = 30
@@ -126,6 +126,9 @@ def yorumlari_isle(kanal, db: DB, llm, yorumcu, bildirim, log: logging.Logger, k
                     log.warning("Sınıflandırılamadı (@%s): %s", h.kullanici, e)
                     continue
                 y = db.yorum_karar(y.kimlik, k.tur, k.cevap, k.konu, k.oneri)
+            if y.tur == SESSIZ:
+                db.yorum_bitir(y.kimlik, "atlandi")
+                continue
             eylem = EYLEM.get(y.tur or "", "begeni")
             if sayac[eylem] >= limit[eylem]:
                 ozet.bekleyen += 1

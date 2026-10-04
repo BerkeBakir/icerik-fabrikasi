@@ -100,7 +100,7 @@ def H(kullanici, metin, video="PART 1 | x"):
 
 def test_turlere_gore_eylem_ve_bildirim(tmp_path):
     yorumlar = [H("a", "Is this real?"), H("b", "please talk slower"), H("c", "love it"),
-                H("d", "follow me pls"), H("e", "fuck you")]
+                H("d", "follow me pls"), H("e", "siktir git")]
     ozet, sayfa, b, db, uykular = calistir(tmp_path, yorumlar)
     assert sayfa.eylemler == [("cevap", "a", "Good question!"), ("cevap", "b", "Thanks, noted!"),
                               ("begen", "c"), ("sikayet", "d", "spam"), ("sikayet", "e", "hakaret")]
@@ -114,6 +114,14 @@ def test_turlere_gore_eylem_ve_bildirim(tmp_path):
     assert durumlar == {"a": "cevaplandi", "b": "cevaplandi", "c": "begenildi", "d": "sikayet_edildi",
                         "e": "sikayet_edildi"}
     assert len(uykular) == 5
+
+
+def test_sessiz_yorum_islem_yapmaz(tmp_path):
+    y = H("a", "she is such a bitch")
+    ozet, sayfa, b, db, uykular = calistir(tmp_path, [y])
+    assert sayfa.eylemler == [] and b.mesajlar == [] and uykular == []
+    assert (ozet.cevap, ozet.begeni, ozet.sikayet, ozet.hata, ozet.bekleyen) == (0, 0, 0, 0, 0)
+    assert db.yorum_getir(yorum_kimligi("t1", "a", y.metin, y.video)).durum == "atlandi"
 
 
 def test_ayni_yorum_ikinci_calistirmada_islenmez(tmp_path):
@@ -248,7 +256,7 @@ def test_yetki_hatasi_hemen_yukselir(tmp_path):
 
 
 def test_kuru_mod_eylemsiz_ve_kayitsiz(tmp_path):
-    y = [H("a", "Is this real?"), H("e", "fuck you")]
+    y = [H("a", "Is this real?"), H("e", "siktir git")]
     ozet, sayfa, b, db, _ = calistir(tmp_path, y, kuru=True)
     assert sayfa.eylemler == [] and b.mesajlar == [] and db.yorum_islenecekler("t1") == []
 
