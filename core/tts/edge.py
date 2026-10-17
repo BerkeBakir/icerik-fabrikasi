@@ -10,6 +10,8 @@ from core import medya
 from core.tekrar import tekrar_dene
 from core.tts import Kelime, SesSonucu, TTSHatasi
 
+KAPSAMA_ORANI = 0.8  # seslendirilen kelime / metindeki kelime; altı = akış yarıda kopmuş say
+
 
 class EdgeTTS:
     def __init__(self, ses: str, hiz: str = "+0%", iletisim=edge_tts.Communicate,
@@ -31,6 +33,9 @@ class EdgeTTS:
                     kelimeler.append(Kelime(parca["text"], round(bas, 3), round(bas + parca["duration"] / 1e7, 3)))
         if not kelimeler or Path(cikti).stat().st_size == 0:
             raise TTSHatasi("Edge-TTS boş ses döndürdü")
+        beklenen = len(metin.split())
+        if len(kelimeler) < KAPSAMA_ORANI * beklenen:
+            raise TTSHatasi(f"Edge-TTS sesi kesik döndü: {len(kelimeler)}/{beklenen} kelime")
         return SesSonucu(Path(cikti), self.sure_fn(cikti), kelimeler)
 
     def seslendir(self, metin: str, cikti: Path) -> SesSonucu:

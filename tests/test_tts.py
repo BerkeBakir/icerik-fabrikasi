@@ -78,3 +78,29 @@ class Calisan:
 def test_yedekli_tts_yedege_duser(tmp_path):
     s = YedekliTTS(Patlayan(), Calisan()).seslendir("x", tmp_path / "a.mp3")
     assert s.sure == 1.0
+
+
+class KesikIletisim(SahteIletisim):
+    """Akış ilk kelimeden sonra kopar (Edge bağlantısı yarıda kesildi)."""
+    cagri = 0
+
+    async def stream(self):
+        KesikIletisim.cagri += 1
+        yield {"type": "audio", "data": b"ID3abc"}
+        yield {"type": "WordBoundary", "offset": 1_000_000, "duration": 2_500_000, "text": "Hello"}
+
+
+def test_edge_kesik_ses_tekrar_denenir_sonra_hata(tmp_path):
+    KesikIletisim.cagri = 0
+    t = EdgeTTS("s", iletisim=KesikIletisim, sure_fn=lambda p: 0.3, uyku=lambda s: None)
+    with pytest.raises(TTSHatasi, match="kesik"):
+        t.seslendir("Hello there my friend how are you today", tmp_path / "a.mp3")
+    assert KesikIletisim.cagri == 3
+
+
+def test_edge_kesik_sonra_tam_gelirse_basarili(tmp_path):
+    sira = iter([KesikIletisim, SahteIletisim, SahteIletisim])
+    t = EdgeTTS("s", iletisim=lambda *a, **kw: next(sira)(*a, **kw), sure_fn=lambda p: 1.2, uyku=lambda s: None)
+    s = t.seslendir("Hello there", tmp_path / "a.mp3")
+    assert [k.metin for k in s.kelimeler] == ["Hello", "there"]
+    assert (tmp_path / "a.mp3").read_bytes() == b"ID3abcdef"

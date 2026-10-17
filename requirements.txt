@@ -1,4 +1,4 @@
-edge-tts>=7.2
+edge-tts>=7.3.1  # 7.2.x: Microsoft 403 (Ekim 2026)
 google-genai>=2.0
 python-dotenv>=1.0
 PyYAML>=6.0
