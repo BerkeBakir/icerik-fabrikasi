@@ -33,11 +33,13 @@ GORUNURLUK_METIN = {"herkes": "Everyone", "arkadaslar": "Friends", "sadece_ben":
 # Zamanlama
 ZAMANLA_SECENEK = 'label:has(input[value="schedule"])'
 ZAMANLA_IZIN = 'button:has-text("Allow")'
-ZAMAN_GIRDILERI = 'div.scheduled-picker input.TUXTextInputCore-input'  # [0]=saat "19:05", [1]=tarih "2026-10-01"
-TAKVIM_SONRAKI_AY = 'div[class*="calendar"] span[class*="arrow"]:last-child'
-TAKVIM_GUN = 'div[class*="calendar"] span[class*="day"][class*="valid"]'
-SAAT_SECENEK = 'span[class*="tiktok-timepicker-left"]'
-DAKIKA_SECENEK = 'span[class*="tiktok-timepicker-right"]'
+# Ekim 2026 arayüzü: tarih/saat açılır seçiciler (combobox), değer .Picker__value'da
+ZAMAN_TARIH_ACICI = '[data-e2e="schedule_container"] [role="combobox"][aria-label="Select date"]'
+ZAMAN_SAAT_ACICI = '[data-e2e="schedule_container"] [role="combobox"][aria-label="Select time"]'
+ZAMAN_DEGER = ".Picker__value"
+TAKVIM_SONRAKI_AY = 'button[aria-label="Next month"]'
+SAAT_SECENEK_ADI = "Hours {:02d}"     # get_by_role("option", name=..., exact=True)
+DAKIKA_SECENEK_ADI = "Minutes {:02d}"
 
 # Paylaşım sonrası
 SIMDI_PAYLAS = 'button:has-text("Post now")'
@@ -81,3 +83,17 @@ VIDEO_SIKAYET_SEBEP = {"hakaret": ["Harassment or bullying", "Hate and harassmen
                        "spam": ["Spam", "Frauds and scams"]}
 VIDEO_SIKAYET_GONDER = 'button:has-text("Submit")'
 VIDEO_SIKAYET_TAMAM = ['text=/thanks for reporting/i', 'text=/report submitted/i', 'button:has-text("Done")']
+
+
+_SIRA_EKI = {1: "st", 2: "nd", 3: "rd", 21: "st", 22: "nd", 23: "rd", 31: "st"}
+
+
+def takvim_gun_adi(zaman) -> str:
+    """Takvim gün düğmesinin aria-label'ı: 'Saturday, October 24th, 2026'."""
+    ek = _SIRA_EKI.get(zaman.day, "th")
+    return f"{zaman:%A}, {zaman:%B} {zaman.day}{ek}, {zaman.year}"
+
+
+def tarih_degeri(zaman) -> str:
+    """Tarih seçicisinin gösterdiği değer: 'Oct 24, 2026'."""
+    return f"{zaman:%b} {zaman.day}, {zaman.year}"

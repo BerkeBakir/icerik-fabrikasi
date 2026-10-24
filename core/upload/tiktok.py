@@ -214,24 +214,29 @@ class TikTokYukleyici:
         if self._gorunurse(izin, 1500):
             izin.click()
             self._bekle()
-        girdiler = sayfa.locator(s.ZAMAN_GIRDILERI)
         # tarih
-        girdiler.nth(1).click()
+        sayfa.locator(s.ZAMAN_TARIH_ACICI).first.click()
+        self._bekle(0.4, 0.8)
         bugun = datetime.now()
         for _ in range((zaman.year * 12 + zaman.month) - (bugun.year * 12 + bugun.month)):
             sayfa.locator(s.TAKVIM_SONRAKI_AY).first.click()
             self._bekle(0.3, 0.6)
-        sayfa.locator(s.TAKVIM_GUN).filter(has_text=s.tam_metin_deseni(str(zaman.day))).first.click()
+        sayfa.get_by_role("button", name=s.takvim_gun_adi(zaman), exact=True).first.click()
         self._bekle()
         # saat ve dakika
-        girdiler.nth(0).click()
-        sayfa.locator(s.SAAT_SECENEK).filter(has_text=s.tam_metin_deseni(f"{zaman.hour:02d}")).first.click()
+        sayfa.locator(s.ZAMAN_SAAT_ACICI).first.click()
+        self._bekle(0.4, 0.8)
+        sayfa.get_by_role("option", name=s.SAAT_SECENEK_ADI.format(zaman.hour), exact=True).first.click()
         self._bekle(0.3, 0.6)
-        sayfa.locator(s.DAKIKA_SECENEK).filter(has_text=s.tam_metin_deseni(f"{zaman.minute:02d}")).first.click()
+        sayfa.get_by_role("option", name=s.DAKIKA_SECENEK_ADI.format(zaman.minute), exact=True).first.click()
         self._bekle()
-        beklenen = f"{zaman.hour:02d}:{zaman.minute:02d}"
-        if girdiler.nth(0).input_value() != beklenen:
-            raise TikTokHatasi(f"Zamanlama saati ayarlanamadı: {girdiler.nth(0).input_value()} != {beklenen}")
+        sayfa.keyboard.press("Escape")
+        self._bekle(0.3, 0.6)
+        tarih = sayfa.locator(s.ZAMAN_TARIH_ACICI).first.locator(s.ZAMAN_DEGER).inner_text().strip()
+        saat = sayfa.locator(s.ZAMAN_SAAT_ACICI).first.locator(s.ZAMAN_DEGER).inner_text().strip()
+        beklenen = (s.tarih_degeri(zaman), f"{zaman.hour:02d}:{zaman.minute:02d}")
+        if (tarih, saat) != beklenen:
+            raise TikTokHatasi(f"Zamanlama ayarlanamadı: {tarih} {saat} != {beklenen[0]} {beklenen[1]}")
         return zaman
 
     def _paylas_ve_dogrula(self, sayfa) -> None:

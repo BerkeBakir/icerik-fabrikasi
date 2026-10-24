@@ -298,3 +298,13 @@ def test_aciklama_hep_bozuksa_paylasmadan_hata(tmp_path, monkeypatch):
     with pytest.raises(TikTokHatasi, match="doğru yazılamadı") as e:
         y._aciklama_yaz(object(), ACK, ETK)
     assert len(yazilan) == 3 and e.value.gonderildi is False
+
+
+def test_takvim_gun_adi_ve_tarih_degeri():
+    from datetime import datetime as dt
+    assert s.takvim_gun_adi(dt(2026, 10, 24, 15, 55)) == "Saturday, October 24th, 2026"
+    assert s.takvim_gun_adi(dt(2026, 10, 1)) == "Thursday, October 1st, 2026"
+    assert s.takvim_gun_adi(dt(2026, 10, 22)) == "Thursday, October 22nd, 2026"
+    assert s.takvim_gun_adi(dt(2026, 10, 13)) == "Tuesday, October 13th, 2026"
+    assert s.tarih_degeri(dt(2026, 10, 4)) == "Oct 4, 2026"
+    assert s.SAAT_SECENEK_ADI.format(9) == "Hours 09" and s.DAKIKA_SECENEK_ADI.format(5) == "Minutes 05"
