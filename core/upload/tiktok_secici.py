@@ -19,6 +19,10 @@ PAYLAS_BUTON = 'button[data-e2e="post_video_button"]'
 YUKLEME_TAMAM = ['text="Uploaded"', '[data-e2e="upload_status_container"] >> text=/uploaded/i']
 
 # Kapatılacak popup/banner düğmeleri (görünenler tıklanır)
+SAYFA_ZAMAN_ASIMI_MS = 60_000
+# Yarım kalmış eski yüklemenin taslağı ("A video you were editing wasn't saved") — yalnız yükleme sayfası açılışında
+TASLAK_AT = 'div:has(:text-matches("wasn.t saved", "i")) button:has-text("Discard")'
+
 KAPAT_BUTONLARI = [
     'button:has-text("Decline optional cookies")',
     'button:has-text("Got it")',

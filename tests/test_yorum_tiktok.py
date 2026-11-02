@@ -109,6 +109,9 @@ class _Yorumcu:
     def _gorunurse(self, loc, ms):
         return self.gorunur
 
+    def _git(self, sayfa, url):
+        sayfa.goto(url)
+
     def _ekran_kaydet(self, sayfa, ad):
         self.ekranlar.append(ad)
         return Path(ad)

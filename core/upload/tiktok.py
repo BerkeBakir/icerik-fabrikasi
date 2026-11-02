@@ -102,12 +102,23 @@ class TikTokYukleyici:
         with sync_playwright() as p:
             ctx, sayfa = self._baslat_sarmali(p)
             try:
-                sayfa.goto(s.GIRIS_URL)
+                self._git(sayfa, s.GIRIS_URL)
                 input("Açılan pencerede TikTok'a giriş yap, bitince bu pencereye dönüp Enter'a bas... ")
             finally:
                 ctx.close()
 
     # --- yardımcılar ---
+    def _git(self, sayfa, url: str) -> None:
+        """'load' olayını beklemez (TikTok'ta bazı kaynaklar asılı kalıp 30 sn'yi aşıyordu)."""
+        sayfa.goto(url, wait_until="domcontentloaded", timeout=s.SAYFA_ZAMAN_ASIMI_MS)
+
+    def _taslagi_at(self, sayfa) -> None:
+        b = sayfa.locator(s.TASLAK_AT).last
+        if self._gorunurse(b, 2000):
+            self.log.info("Yarım kalmış eski taslak atılıyor")
+            b.click()
+            self._bekle(1, 2)
+
     def _gorunurse(self, locator, sure_ms: int) -> bool:
         from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
@@ -284,12 +295,13 @@ class TikTokYukleyici:
             with sync_playwright() as p:
                 ctx, sayfa = self._baslat_sarmali(p)
                 try:
-                    sayfa.goto(s.YUKLEME_URL)
+                    self._git(sayfa, s.YUKLEME_URL)
                     self._bekle(2, 4)
                     if s.GIRIS_YOLU in sayfa.url:
                         raise TikTokHatasi("TikTok oturumu kapalı; 'calistir.py <kanal> --giris' ile giriş yap",
                                            yetki=True)
                     self._popuplari_kapat(sayfa)
+                    self._taslagi_at(sayfa)
                     self.log.info("Video seçiliyor: %s", Path(video).name)
                     self._dosya_sec(sayfa, Path(video))
                     self._popuplari_kapat(sayfa)

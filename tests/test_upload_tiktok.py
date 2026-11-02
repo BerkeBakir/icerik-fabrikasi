@@ -168,7 +168,7 @@ def test_oturum_kapaliysa_yetki_hatasi(tmp_path, monkeypatch):
     class Sayfa:
         url = "https://www.tiktok.com/login?redirect=x"
 
-        def goto(self, url):
+        def goto(self, url, **kw):
             pass
 
     class Ctx:
@@ -192,7 +192,7 @@ def test_oturum_kapaliysa_yetki_hatasi(tmp_path, monkeypatch):
 class _SahteYuklemeSayfasi:
     url = "https://www.tiktok.com/tiktokstudio/upload"
 
-    def goto(self, url):
+    def goto(self, url, **kw):
         pass
 
 
@@ -215,7 +215,7 @@ def _yukleyici(tmp_path, monkeypatch, paylas):
     monkeypatch.setattr(t, "sync_playwright", lambda: _SahtePw())
     y = TikTokYukleyici(tmp_path / "p", tmp_path / "h")
     monkeypatch.setattr(y, "_baslat", lambda p: (_SahteCtx(), _SahteYuklemeSayfasi()))
-    for ad in ("_dosya_sec", "_aciklama_yaz", "_gorunurluk", "_popuplari_kapat", "_bekle"):
+    for ad in ("_dosya_sec", "_aciklama_yaz", "_gorunurluk", "_popuplari_kapat", "_taslagi_at", "_bekle"):
         monkeypatch.setattr(y, ad, lambda *a, **kw: None)
     monkeypatch.setattr(y, "_ekran_kaydet", lambda *a, **kw: None)
     monkeypatch.setattr(y, "_paylas_ve_dogrula", lambda sayfa: paylas(y))
@@ -308,3 +308,13 @@ def test_takvim_gun_adi_ve_tarih_degeri():
     assert s.takvim_gun_adi(dt(2026, 10, 13)) == "Tuesday, October 13th, 2026"
     assert s.tarih_degeri(dt(2026, 10, 4)) == "Oct 4, 2026"
     assert s.SAAT_SECENEK_ADI.format(9) == "Hours 09" and s.DAKIKA_SECENEK_ADI.format(5) == "Minutes 05"
+
+
+def test_git_load_olayini_beklemez(tmp_path):
+    cagri = {}
+
+    class Sayfa:
+        def goto(self, url, **kw):
+            cagri.update(url=url, **kw)
+    TikTokYukleyici(tmp_path / "p", tmp_path / "h")._git(Sayfa(), "https://x")
+    assert cagri == {"url": "https://x", "wait_until": "domcontentloaded", "timeout": s.SAYFA_ZAMAN_ASIMI_MS}

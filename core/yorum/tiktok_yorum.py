@@ -68,7 +68,7 @@ class TikTokYorumcu(TikTokYukleyici):
                 raise YorumIslemHatasi(str(e)) from e
             try:
                 try:
-                    sayfa.goto(s.YORUM_URL)
+                    self._git(sayfa, s.YORUM_URL)
                     time.sleep(random.uniform(4, 6))
                     if s.GIRIS_YOLU in sayfa.url:
                         raise YorumIslemHatasi("TikTok oturumu kapalı", yetki=True)
@@ -98,7 +98,7 @@ class YorumSayfasi:
         """Başarısız eylemden sonra yarım kalmış cevap kutusu/menü bir sonrakine sızmasın.
         Kendi hatası asıl hatayı örtmez (yalnız loglanır)."""
         try:
-            self.sayfa.goto(s.YORUM_URL)
+            self.y._git(self.sayfa, s.YORUM_URL)
             time.sleep(random.uniform(3, 5))
             self.y._popuplari_kapat(self.sayfa)
         except Exception as e:
@@ -230,7 +230,7 @@ class YorumSayfasi:
         if not self._video_satirlari:
             sekme = self.ctx.new_page()
             try:
-                sekme.goto(s.ICERIK_URL)
+                self.y._git(sekme, s.ICERIK_URL)
                 time.sleep(random.uniform(4, 6))
                 linkler = sekme.locator(s.ICERIK_VIDEO_LINK)
                 satirlar = []
@@ -262,7 +262,7 @@ class YorumSayfasi:
         vs = self.ctx.new_page()
         gonderildi = False
         try:
-            vs.goto(s.TIKTOK_KOK + yol)
+            self.y._git(vs, s.TIKTOK_KOK + yol)
             time.sleep(random.uniform(5, 7))
             # Hedef: yazar linki VE tam metin aynı kapta; tek değilse hiçbir şeye tıklanmaz
             ogeler = vs.locator(s.VIDEO_YORUM_OGE).filter(
